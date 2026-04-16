@@ -456,7 +456,7 @@ function mergeCircles(circles: FittedCircle[], mergeThreshold: number): FittedCi
 // ============================================================
 
 export function generateGrid(edgeData: EdgeData, canvasWidth: number, canvasHeight: number, imageData?: ImageData): GridData {
-  const { arcs, bounds, centerOfMass, edgePoints, logoSize } = edgeData;
+  const { arcs, bounds, centerOfMass, geometricCenter, edgePoints, logoSize, cornerRegions, spiralEye, spiralEyeRadius } = edgeData;
 
   const maxFitError = logoSize * 0.05;
   const minRadius = logoSize * 0.015;
@@ -507,7 +507,9 @@ export function generateGrid(edgeData: EdgeData, canvasWidth: number, canvasHeig
   });
 
   // ---- Golden ratio circles ----
-  const cx = centerOfMass.x, cy = centerOfMass.y;
+  // Use geometric center (midpoint of bounds) for compositional circles — more stable than center of mass
+  const cx = geometricCenter?.x ?? centerOfMass.x;
+  const cy = geometricCenter?.y ?? centerOfMass.y;
   const goldenBaseUnit = Math.min(bounds.width, bounds.height) / 21;
   const goldenCircles: SimpleCircle[] = [];
   for (const fib of FIBONACCI) {
@@ -541,11 +543,97 @@ export function generateGrid(edgeData: EdgeData, canvasWidth: number, canvasHeig
   // ---- NEW: Osculating circles at curvature maxima ----
   const osculatingResult = osculatingCircles(arcs, minRadius, maxRadius);
 
-  // ---- NEW: Corner radius circles ----
-  const cornerResult = cornerRadiusCircles(arcs, minRadius * 0.5, maxRadius * 0.5);
+  // ---- Corner radius circles (from semantic corner regions) ----
+  const cornerResult: SimpleCircle[] = [];
+  if (cornerRegions.length > 0) {
+    const cornerFits: { r: number; cx: number; cy: number }[] = [];
+    for (const region of cornerRegions) {
+      if (region.points.length < 5) continue;
+      const fit = kasaCircleFit(region.points);
+      if (fit && fit.r > minRadius * 0.5 && fit.r < maxRadius * 0.5 && fit.error < fit.r * 0.4) {
+        cornerFits.push({ r: fit.r, cx: fit.cx, cy: fit.cy });
+      }
+    }
+    // Enforce equal radius: average all corner radii for consistency
+    if (cornerFits.length >= 2) {
+      const avgR = cornerFits.reduce((s, c) => s + c.r, 0) / cornerFits.length;
+      for (const fit of cornerFits) {
+        cornerResult.push({
+          cx: fit.cx, cy: fit.cy, r: avgR,
+          type: "cornerRadius",
+          label: `Corner r=${Math.round(avgR)}`,
+        });
+      }
+    } else {
+      // Fallback: use general corner detection
+      const fallback = cornerRadiusCircles(arcs, minRadius * 0.5, maxRadius * 0.5);
+      cornerResult.push(...fallback);
+    }
+  } else {
+    const fallback = cornerRadiusCircles(arcs, minRadius * 0.5, maxRadius * 0.5);
+    cornerResult.push(...fallback);
+  }
 
-  // ---- NEW: Tangent circles between fitted circles ----
-  const tangentResult = tangentCirclePairs(fittedCircles, minRadius, maxRadius);
+  // Spiral eye circle
+  if (spiralEye && spiralEyeRadius > minRadius) {
+    cornerResult.push({
+      cx: spiralEye.x, cy: spiralEye.y, r: spiralEyeRadius,
+      type: "cornerRadius",
+      label: "Spiral eye",
+    });
+  }
+
+  // ---- Tangent circles (adjacent arcs on same contour) ----
+  const tangentResult: SimpleCircle[] = [];
+  // Group arcs by contour, then create tangent circles between sequential arcs
+  const arcsByContour = new Map<number, ArcSegment[]>();
+  for (const arc of arcs) {
+    const list = arcsByContour.get(arc.contourIndex) || [];
+    list.push(arc);
+    arcsByContour.set(arc.contourIndex, list);
+  }
+  for (const [, contourArcs] of arcsByContour) {
+    // Sort by arc index (sequential position on contour)
+    contourArcs.sort((a, b) => a.arcIndex - b.arcIndex);
+    for (let i = 0; i < contourArcs.length - 1; i++) {
+      const arcA = contourArcs[i];
+      const arcB = contourArcs[i + 1];
+      // Find the junction point between these two arcs
+      const endA = arcA.points[arcA.points.length - 1];
+      const startB = arcB.points[0];
+      const junctionDist = Math.sqrt((endA.x - startB.x) ** 2 + (endA.y - startB.y) ** 2);
+      // Only create tangent if arcs are actually adjacent (close endpoints)
+      if (junctionDist > logoSize * 0.15) continue;
+
+      // Fit circles to each arc
+      const fitA = kasaCircleFit(arcA.points);
+      const fitB = kasaCircleFit(arcB.points);
+      if (!fitA || !fitB) continue;
+
+      // The tangent circle bridges the junction: centered at the midpoint of the
+      // two arc endpoints, with radius equal to half the gap
+      const midX = (endA.x + startB.x) / 2;
+      const midY = (endA.y + startB.y) / 2;
+      // Radius: use the geometric mean of the two fitted radii (harmonious)
+      const bridgeR = Math.sqrt(fitA.r * fitB.r);
+      if (bridgeR < minRadius || bridgeR > maxRadius) continue;
+
+      tangentResult.push({
+        cx: midX, cy: midY, r: bridgeR,
+        type: "tangent",
+        label: "Bridge",
+      });
+    }
+  }
+  // Deduplicate
+  const tangentDeduped: SimpleCircle[] = [];
+  for (const c of tangentResult) {
+    if (!tangentDeduped.some(e => Math.sqrt((e.cx - c.cx) ** 2 + (e.cy - c.cy) ** 2) < c.r * 0.3)) {
+      tangentDeduped.push(c);
+    }
+  }
+  tangentResult.length = 0;
+  tangentResult.push(...tangentDeduped.slice(0, 8));
 
   // ---- NEW: Keypoint circles through boundary extremes ----
   const keypointResult = keypointCircles(edgePoints, bounds, minRadius * 2, maxRadius);
