@@ -6,12 +6,12 @@ export interface Point {
 export interface Contour {
   points: Point[];
   closed: boolean;
+  length: number; // total pixel length of contour
 }
 
 export interface ArcSegment {
   points: Point[];
-  startIdx: number;
-  endIdx: number;
+  arcLength: number; // pixel length of this arc
 }
 
 export interface EdgeData {
@@ -20,9 +20,9 @@ export interface EdgeData {
   bounds: { x: number; y: number; width: number; height: number };
   centerOfMass: Point;
   edgePoints: Point[];
+  logoSize: number;
 }
 
-// Sobel edge detection → magnitude + direction
 function sobelEdges(gray: Float32Array, width: number, height: number) {
   const mag = new Float32Array(width * height);
   const dir = new Float32Array(width * height);
@@ -48,7 +48,6 @@ function sobelEdges(gray: Float32Array, width: number, height: number) {
   return { mag, dir, maxMag };
 }
 
-// Non-maximum suppression: thin edges to 1px
 function nonMaxSuppression(
   mag: Float32Array, dir: Float32Array, width: number, height: number, threshold: number
 ): Uint8Array {
@@ -59,7 +58,6 @@ function nonMaxSuppression(
       const idx = y * width + x;
       if (mag[idx] < threshold) continue;
 
-      // Quantize direction to 0, 45, 90, 135 degrees
       let angle = ((dir[idx] * 180) / Math.PI + 180) % 180;
       let n1 = 0, n2 = 0;
 
@@ -85,7 +83,17 @@ function nonMaxSuppression(
   return out;
 }
 
-// 8-connectivity contour tracing
+// Compute pixel-length of a point chain
+function chainLength(points: Point[]): number {
+  let len = 0;
+  for (let i = 1; i < points.length; i++) {
+    const dx = points[i].x - points[i - 1].x;
+    const dy = points[i].y - points[i - 1].y;
+    len += Math.sqrt(dx * dx + dy * dy);
+  }
+  return len;
+}
+
 function traceContours(edgeMap: Uint8Array, width: number, height: number, minLength: number): Contour[] {
   const visited = new Uint8Array(width * height);
   const contours: Contour[] = [];
@@ -97,21 +105,16 @@ function traceContours(edgeMap: Uint8Array, width: number, height: number, minLe
       const idx = y * width + x;
       if (edgeMap[idx] === 0 || visited[idx]) continue;
 
-      // Trace from this point
       const points: Point[] = [];
       let cx = x, cy = y;
       let closed = false;
 
       while (true) {
         const cIdx = cy * width + cx;
-        if (visited[cIdx] && points.length > 2) {
-          closed = true;
-          break;
-        }
+        if (visited[cIdx] && points.length > 2) { closed = true; break; }
         visited[cIdx] = 1;
         points.push({ x: cx, y: cy });
 
-        // Find next unvisited neighbor
         let found = false;
         for (let d = 0; d < 8; d++) {
           const nx = cx + dx[d];
@@ -119,27 +122,27 @@ function traceContours(edgeMap: Uint8Array, width: number, height: number, minLe
           if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
           const nIdx = ny * width + nx;
           if (edgeMap[nIdx] > 0 && !visited[nIdx]) {
-            cx = nx;
-            cy = ny;
-            found = true;
-            break;
+            cx = nx; cy = ny; found = true; break;
           }
         }
         if (!found) break;
-        if (points.length > 5000) break; // safety limit
+        if (points.length > 10000) break;
       }
 
-      if (points.length >= minLength) {
-        contours.push({ points, closed });
+      const len = chainLength(points);
+      if (len >= minLength) {
+        contours.push({ points, closed, length: len });
       }
     }
   }
 
+  // Sort by length descending — longest contours are most important
+  contours.sort((a, b) => b.length - a.length);
   return contours;
 }
 
-// Compute curvature at each point using k-neighbor window
-function computeCurvature(points: Point[], k: number = 5): number[] {
+// Smooth curvature using a running average
+function computeCurvature(points: Point[], k: number): number[] {
   const n = points.length;
   const curvature = new Array(n).fill(0);
 
@@ -158,54 +161,63 @@ function computeCurvature(points: Point[], k: number = 5): number[] {
     const len1 = Math.sqrt(v1x * v1x + v1y * v1y);
     const len2 = Math.sqrt(v2x * v2x + v2y * v2y);
 
-    if (len1 > 0 && len2 > 0) {
+    if (len1 > 0.5 && len2 > 0.5) {
       curvature[i] = Math.atan2(cross, dot) / (len1 + len2);
     }
   }
   return curvature;
 }
 
-// Segment contour into arcs at curvature discontinuities
-function segmentArcs(contour: Contour, minArcLength: number = 8): ArcSegment[] {
+function segmentArcs(contour: Contour, minArcPixelLength: number): ArcSegment[] {
   const pts = contour.points;
-  if (pts.length < minArcLength) return [];
+  if (pts.length < 10) return [];
 
-  const k = Math.max(3, Math.min(8, Math.floor(pts.length / 20)));
+  // Use larger k for smoother curvature on longer contours
+  const k = Math.max(4, Math.min(12, Math.floor(pts.length / 15)));
   const curvature = computeCurvature(pts, k);
   const arcs: ArcSegment[] = [];
 
-  // Find corners: points where curvature changes sign or magnitude jumps
-  const cornerThreshold = 0.015;
+  // Find corners: sharp curvature changes or near-zero curvature (straight segments)
+  const cornerThreshold = 0.012;
   const corners: number[] = [0];
+  const minSegPoints = Math.max(8, Math.floor(minArcPixelLength / 1.5));
 
   for (let i = k + 1; i < pts.length - k - 1; i++) {
     const absCurv = Math.abs(curvature[i]);
     const prevCurv = Math.abs(curvature[i - 1]);
-    const signChange = (curvature[i] > 0) !== (curvature[i - 1] > 0) && absCurv > cornerThreshold * 0.5;
+    const signChange = (curvature[i] > 0) !== (curvature[i - 1] > 0) && absCurv > cornerThreshold * 0.3;
     const jump = Math.abs(absCurv - prevCurv) > cornerThreshold;
 
     if (signChange || jump) {
-      // Only add if sufficiently far from last corner
-      if (i - corners[corners.length - 1] >= minArcLength) {
+      if (i - corners[corners.length - 1] >= minSegPoints) {
         corners.push(i);
       }
     }
   }
   corners.push(pts.length - 1);
 
-  // Create arc segments between consecutive corners
   for (let i = 0; i < corners.length - 1; i++) {
     const start = corners[i];
     const end = corners[i + 1];
-    if (end - start >= minArcLength) {
-      const arcPts = pts.slice(start, end + 1);
-      // Check if this segment has enough curvature to be an arc (not a straight line)
-      const curvSlice = curvature.slice(start, end + 1);
-      const maxCurv = Math.max(...curvSlice.map(Math.abs));
-      if (maxCurv > 0.002) {
-        arcs.push({ points: arcPts, startIdx: start, endIdx: end });
-      }
-    }
+    const segPts = pts.slice(start, end + 1);
+    const arcLen = chainLength(segPts);
+
+    if (arcLen < minArcPixelLength) continue;
+
+    // Check curvature: must have consistent non-zero curvature (it's an ARC, not a line)
+    const curvSlice = curvature.slice(start, end + 1).filter((_, idx) => idx >= k && idx < segPts.length - k);
+    if (curvSlice.length < 3) continue;
+
+    const avgCurv = curvSlice.reduce((s, v) => s + Math.abs(v), 0) / curvSlice.length;
+    if (avgCurv < 0.001) continue; // too straight
+
+    // Check curvature consistency: standard deviation should be low relative to mean
+    // (a good arc has consistent curvature, not wildly varying)
+    const variance = curvSlice.reduce((s, v) => s + (Math.abs(v) - avgCurv) ** 2, 0) / curvSlice.length;
+    const stddev = Math.sqrt(variance);
+    if (avgCurv > 0.001 && stddev / avgCurv > 2.0) continue; // too inconsistent
+
+    arcs.push({ points: segPts, arcLength: arcLen });
   }
 
   return arcs;
@@ -213,45 +225,60 @@ function segmentArcs(contour: Contour, minArcLength: number = 8): ArcSegment[] {
 
 export function detectEdges(imageData: ImageData): EdgeData {
   const { width, height, data } = imageData;
+  const logoSize = Math.max(width, height);
 
-  // Convert to grayscale
+  // Grayscale
   const gray = new Float32Array(width * height);
   for (let i = 0; i < width * height; i++) {
-    const r = data[i * 4];
-    const g = data[i * 4 + 1];
-    const b = data[i * 4 + 2];
-    const a = data[i * 4 + 3];
+    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2], a = data[i * 4 + 3];
     gray[i] = a > 0 ? 0.299 * r + 0.587 * g + 0.114 * b : 0;
   }
 
-  // Sobel + NMS
-  const { mag, dir, maxMag } = sobelEdges(gray, width, height);
-  const threshold = maxMag * 0.12;
-  const thinEdges = nonMaxSuppression(mag, dir, width, height, threshold);
-
-  // Contour tracing
-  const minContourLen = Math.max(10, Math.floor(Math.min(width, height) / 40));
-  const contours = traceContours(thinEdges, width, height, minContourLen);
-
-  // Arc segmentation
-  const allArcs: ArcSegment[] = [];
-  for (const contour of contours) {
-    const arcs = segmentArcs(contour, Math.max(6, Math.floor(minContourLen / 2)));
-    allArcs.push(...arcs);
-  }
-
-  // Collect all edge points for scoring
-  const edgePoints: Point[] = [];
-  const step = Math.max(1, Math.floor(Math.min(width, height) / 300));
-  for (let y = 1; y < height - 1; y += step) {
-    for (let x = 1; x < width - 1; x += step) {
-      if (thinEdges[y * width + x] > 0) {
-        edgePoints.push({ x, y });
+  // Gaussian blur (3x3) to reduce noise before edge detection
+  const blurred = new Float32Array(width * height);
+  const kernel = [1, 2, 1, 2, 4, 2, 1, 2, 1];
+  const kSum = 16;
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      let sum = 0;
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          sum += gray[(y + ky) * width + (x + kx)] * kernel[(ky + 1) * 3 + (kx + 1)];
+        }
       }
+      blurred[y * width + x] = sum / kSum;
     }
   }
 
-  // Bounds from alpha
+  const { mag, dir, maxMag } = sobelEdges(blurred, width, height);
+  const threshold = maxMag * 0.15; // slightly higher threshold to reduce noise
+  const thinEdges = nonMaxSuppression(mag, dir, width, height, threshold);
+
+  // Minimum contour length scales with logo size — need substantial contours
+  const minContourLen = Math.max(20, Math.floor(logoSize / 15));
+  const contours = traceContours(thinEdges, width, height, minContourLen);
+
+  // Minimum arc length: at least 5% of logo size — no tiny arcs
+  const minArcLen = Math.max(15, Math.floor(logoSize / 20));
+  const allArcs: ArcSegment[] = [];
+  for (const contour of contours) {
+    const arcs = segmentArcs(contour, minArcLen);
+    allArcs.push(...arcs);
+  }
+
+  // Sort arcs by length — longest arcs are most important
+  allArcs.sort((a, b) => b.arcLength - a.arcLength);
+
+  // Edge points for scoring
+  const edgePoints: Point[] = [];
+  const step = Math.max(1, Math.floor(logoSize / 400));
+  for (let y = 1; y < height - 1; y += step) {
+    for (let x = 1; x < width - 1; x += step) {
+      if (thinEdges[y * width + x] > 0) edgePoints.push({ x, y });
+    }
+  }
+
+  // Bounds
   let minX = width, minY = height, maxX = 0, maxY = 0;
   let sumX = 0, sumY = 0, count = 0;
   for (let y = 0; y < height; y++) {
@@ -262,9 +289,7 @@ export function detectEdges(imageData: ImageData): EdgeData {
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
         if (y > maxY) maxY = y;
-        sumX += x;
-        sumY += y;
-        count++;
+        sumX += x; sumY += y; count++;
       }
     }
   }
@@ -274,5 +299,5 @@ export function detectEdges(imageData: ImageData): EdgeData {
     ? { x: sumX / count, y: sumY / count }
     : { x: width / 2, y: height / 2 };
 
-  return { contours, arcs: allArcs, bounds, centerOfMass, edgePoints };
+  return { contours, arcs: allArcs, bounds, centerOfMass, edgePoints, logoSize };
 }
