@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Upload, Download, RotateCcw, Share2, Grid3X3 } from "lucide-react";
 import { useCallback, useRef } from "react";
-import { detectEdges, findKeyPoints } from "@/lib/edge-detection";
+import { detectEdges } from "@/lib/edge-detection";
 import { generateGrid } from "@/lib/grid-generator";
 import { getCanvasForExport } from "./logo-canvas";
 
@@ -20,8 +20,10 @@ export function Toolbar() {
     imageUrl,
     imageElement,
     gridData,
+    warpedImageData,
     isProcessing,
     setImage,
+    setOriginalImageData,
     setGridData,
     setProcessing,
     setAnimationProgress,
@@ -50,8 +52,9 @@ export function Toolbar() {
         tempCtx.drawImage(img, 0, 0);
         const imageData = tempCtx.getImageData(0, 0, img.width, img.height);
 
+        setOriginalImageData(imageData);
+
         const edgeData = detectEdges(imageData);
-        edgeData.points = findKeyPoints(edgeData.points, 100);
         const grid = generateGrid(edgeData, img.width, img.height);
 
         setGridData(grid);
@@ -69,25 +72,24 @@ export function Toolbar() {
       };
       img.src = url;
     },
-    [setImage, setGridData, setProcessing, setAnimationProgress]
+    [setImage, setOriginalImageData, setGridData, setProcessing, setAnimationProgress]
   );
 
   const handleExport = useCallback(
-    (mode: "combined" | "grid-only" | "logo-only") => {
+    (mode: "combined" | "grid-only" | "logo-only" | "warped") => {
       if (!imageElement || !gridData) return;
 
-      const canvas = getCanvasForExport(imageElement, gridData, settings, mode);
+      const canvas = getCanvasForExport(imageElement, gridData, settings, mode, 2, warpedImageData);
       const link = document.createElement("a");
       link.download = `logo-grid-${mode}.png`;
       link.href = canvas.toDataURL("image/png");
       link.click();
     },
-    [imageElement, gridData, settings]
+    [imageElement, gridData, settings, warpedImageData]
   );
 
   return (
     <div className="h-12 bg-[#0a0a0a] border-b border-neutral-800 flex items-center px-4 gap-3 shrink-0">
-      {/* Logo */}
       <div className="flex items-center gap-2 mr-4">
         <Grid3X3 className="w-5 h-5 text-cyan-400" />
         <span className="text-sm font-semibold text-neutral-200 hidden sm:inline">
@@ -97,14 +99,12 @@ export function Toolbar() {
 
       <div className="flex-1" />
 
-      {/* Processing indicator */}
       {isProcessing && (
         <span className="text-xs text-neutral-500 animate-pulse">
-          Analyzing structure...
+          Tracing curves...
         </span>
       )}
 
-      {/* Upload button */}
       <Button
         variant="outline"
         size="sm"
@@ -125,46 +125,33 @@ export function Toolbar() {
         }}
       />
 
-      {/* Export dropdown */}
       {imageUrl && gridData && (
         <>
           <DropdownMenu>
             <DropdownMenuTrigger
-              render={<Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-2 bg-neutral-900 border-neutral-700 hover:bg-neutral-800 text-neutral-300"
-              />}
+              render={<Button variant="outline" size="sm" className="h-8 gap-2 bg-neutral-900 border-neutral-700 hover:bg-neutral-800 text-neutral-300" />}
             >
               <Download className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Export</span>
             </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="bg-neutral-900 border-neutral-700"
-            >
-              <DropdownMenuItem
-                onClick={() => handleExport("combined")}
-                className="text-neutral-300 focus:bg-neutral-800 focus:text-neutral-200"
-              >
+            <DropdownMenuContent align="end" className="bg-neutral-900 border-neutral-700">
+              <DropdownMenuItem onClick={() => handleExport("combined")} className="text-neutral-300 focus:bg-neutral-800 focus:text-neutral-200">
                 Logo + Grid (PNG 2x)
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleExport("grid-only")}
-                className="text-neutral-300 focus:bg-neutral-800 focus:text-neutral-200"
-              >
+              <DropdownMenuItem onClick={() => handleExport("grid-only")} className="text-neutral-300 focus:bg-neutral-800 focus:text-neutral-200">
                 Grid only (transparent)
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleExport("logo-only")}
-                className="text-neutral-300 focus:bg-neutral-800 focus:text-neutral-200"
-              >
+              <DropdownMenuItem onClick={() => handleExport("logo-only")} className="text-neutral-300 focus:bg-neutral-800 focus:text-neutral-200">
                 Logo only (PNG 2x)
               </DropdownMenuItem>
+              {warpedImageData && (
+                <DropdownMenuItem onClick={() => handleExport("warped")} className="text-cyan-300 focus:bg-neutral-800 focus:text-cyan-200">
+                  Warped logo (Perfectified)
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Analysis card */}
           <Button
             variant="outline"
             size="sm"
@@ -175,7 +162,6 @@ export function Toolbar() {
             <span className="hidden sm:inline">Analysis</span>
           </Button>
 
-          {/* Reset */}
           <Button
             variant="ghost"
             size="sm"

@@ -3,12 +3,12 @@
 import { useCallback, useState } from "react";
 import { Upload, Image as ImageIcon } from "lucide-react";
 import { useLogoStore } from "@/lib/use-logo-store";
-import { detectEdges, findKeyPoints } from "@/lib/edge-detection";
+import { detectEdges } from "@/lib/edge-detection";
 import { generateGrid } from "@/lib/grid-generator";
 
 export function UploadZone() {
   const [isDragging, setIsDragging] = useState(false);
-  const { imageUrl, setImage, setGridData, setProcessing, setAnimationProgress } =
+  const { imageUrl, setImage, setOriginalImageData, setGridData, setProcessing, setAnimationProgress } =
     useLogoStore();
 
   const processImage = useCallback(
@@ -30,7 +30,6 @@ export function UploadZone() {
       img.onload = () => {
         setImage(url, img);
 
-        // Run edge detection
         const tempCanvas = document.createElement("canvas");
         tempCanvas.width = img.width;
         tempCanvas.height = img.height;
@@ -38,8 +37,10 @@ export function UploadZone() {
         tempCtx.drawImage(img, 0, 0);
         const imageData = tempCtx.getImageData(0, 0, img.width, img.height);
 
+        // Store original image data for warping
+        setOriginalImageData(imageData);
+
         const edgeData = detectEdges(imageData);
-        edgeData.points = findKeyPoints(edgeData.points, 100);
         const gridData = generateGrid(edgeData, img.width, img.height);
 
         setGridData(gridData);
@@ -58,7 +59,7 @@ export function UploadZone() {
       };
       img.src = url;
     },
-    [setImage, setGridData, setProcessing, setAnimationProgress]
+    [setImage, setOriginalImageData, setGridData, setProcessing, setAnimationProgress]
   );
 
   const handleDrop = useCallback(
@@ -93,10 +94,7 @@ export function UploadZone() {
             : "border-neutral-600 hover:border-neutral-500 bg-neutral-900/50"
           }
         `}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setIsDragging(true);
-        }}
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
       >
@@ -109,29 +107,17 @@ export function UploadZone() {
         </div>
 
         <div className="text-center">
-          <p className="text-neutral-200 font-medium mb-1">
-            Drop your logo here
-          </p>
-          <p className="text-neutral-500 text-sm">
-            PNG, JPG, or SVG up to 10MB
-          </p>
+          <p className="text-neutral-200 font-medium mb-1">Drop your logo here</p>
+          <p className="text-neutral-500 text-sm">PNG, JPG, or SVG up to 10MB</p>
         </div>
 
         <label className="cursor-pointer px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm font-medium transition-colors">
           Choose file
-          <input
-            type="file"
-            className="hidden"
-            accept="image/png,image/jpeg,image/svg+xml"
-            onChange={handleFileInput}
-          />
+          <input type="file" className="hidden" accept="image/png,image/jpeg,image/svg+xml" onChange={handleFileInput} />
         </label>
 
-        {/* Example output preview */}
         <div className="mt-4 pt-4 border-t border-neutral-800 w-full">
-          <p className="text-neutral-600 text-xs text-center mb-3">
-            Example output
-          </p>
+          <p className="text-neutral-600 text-xs text-center mb-3">Example output</p>
           <div className="flex items-center justify-center gap-3">
             <div className="w-16 h-16 rounded-lg bg-neutral-800 flex items-center justify-center relative overflow-hidden">
               <div className="w-10 h-10 rounded-md bg-blue-600" />
@@ -144,7 +130,7 @@ export function UploadZone() {
               </svg>
             </div>
             <div className="text-neutral-600 text-xs">
-              <span className="text-cyan-500">→</span> Grid overlay
+              <span className="text-cyan-500">→</span> Curve-traced grids
             </div>
           </div>
         </div>
