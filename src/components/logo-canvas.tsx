@@ -134,6 +134,16 @@ export function LogoCanvas() {
         drawIdealCircles(ctx, gridData.idealCircles, drawX, drawY, scaleX, scaleY, settings, progress);
       }
 
+      // Golden ratio circles (Fibonacci from center)
+      if (settings.goldenCircles) {
+        drawSimpleCircles(ctx, gridData.goldenCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+      }
+
+      // Concentric circles
+      if (settings.concentricCircles) {
+        drawSimpleCircles(ctx, gridData.concentricCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+      }
+
       // Construction lines between circle centers
       if (settings.constructionLines) {
         drawLines(ctx, gridData.constructionLines, drawX, drawY, scaleX, scaleY, settings, progress, "construction");
@@ -189,6 +199,33 @@ export function LogoCanvas() {
       <canvas ref={canvasRef} className="absolute inset-0" />
     </div>
   );
+}
+
+function drawSimpleCircles(
+  ctx: CanvasRenderingContext2D,
+  circles: { cx: number; cy: number; r: number }[],
+  ox: number, oy: number, sx: number, sy: number,
+  settings: { opacity: number; strokeWidth: number; gridColor: string },
+  progress: number
+) {
+  const color = getColor(settings.gridColor, "fitted", settings.opacity * 0.5);
+  const scale = Math.min(sx, sy);
+
+  circles.forEach((c, i) => {
+    const delay = i / circles.length;
+    const p = Math.max(0, Math.min(1, (progress - delay * 0.3) / 0.7));
+    if (p <= 0) return;
+
+    const cx = ox + c.cx * sx;
+    const cy = oy + c.cy * sy;
+    const r = c.r * scale * p;
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = settings.strokeWidth * 0.7;
+    ctx.stroke();
+  });
 }
 
 function drawFittedCircles(
@@ -373,6 +410,8 @@ export function getCanvasForExport(
 
     if (settings.fittedCircles) drawFittedCircles(ctx, gridData.fittedCircles, 0, 0, sx, sy, settings, 1);
     if (settings.idealCircles) drawIdealCircles(ctx, gridData.idealCircles, 0, 0, sx, sy, settings, 1);
+    if (settings.goldenCircles) drawSimpleCircles(ctx, gridData.goldenCircles, 0, 0, sx, sy, settings, 1);
+    if (settings.concentricCircles) drawSimpleCircles(ctx, gridData.concentricCircles, 0, 0, sx, sy, settings, 1);
     if (settings.constructionLines) drawLines(ctx, gridData.constructionLines, 0, 0, sx, sy, settings, 1, "construction");
     if (settings.goldenRect) drawRects(ctx, gridData.goldenRects, 0, 0, sx, sy, settings, 1);
     if (settings.ruleOfThirds) drawLines(ctx, gridData.thirdLines, 0, 0, sx, sy, settings, 1, "line");

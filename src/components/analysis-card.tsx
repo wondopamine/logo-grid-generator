@@ -141,11 +141,34 @@ export function AnalysisCard() {
           </div>
         </div>
 
-        {/* Individual scores */}
-        <div className="space-y-4 mb-8">
-          <ScoreRow label="Golden Ratio Adherence" value={gridData.scores.goldenRatio} />
-          <ScoreRow label="Symmetry" value={gridData.scores.symmetry} />
-          <ScoreRow label="Grid Alignment" value={gridData.scores.gridAlignment} />
+        {/* Individual scores with explanations */}
+        <div className="space-y-5 mb-8">
+          <ScoreRow
+            label="Golden Ratio Adherence"
+            value={gridData.scores.goldenRatio}
+            explanation="How closely the detected circle radii match Fibonacci sequence proportions (1, 1, 2, 3, 5, 8, 13...). Higher means your curves naturally follow the golden ratio, which creates visual harmony."
+          />
+          <ScoreRow
+            label="Symmetry"
+            value={gridData.scores.symmetry}
+            explanation="How mirror-balanced the logo is along its vertical center axis. A perfectly symmetrical logo scores 100%. Asymmetric logos score lower but can still be intentionally beautiful."
+          />
+          <ScoreRow
+            label="Grid Alignment"
+            value={gridData.scores.gridAlignment}
+            explanation="What percentage of the logo's edges fall on the detected construction circles. Higher means the logo was built (or can be explained by) precise geometric circles."
+          />
+        </div>
+
+        {/* What the scores mean */}
+        <div className="bg-neutral-900/50 rounded-lg p-3 mb-6">
+          <p className="text-[11px] text-neutral-500 leading-relaxed">
+            {overall >= 80
+              ? "Your logo has strong geometric foundations. The curves follow mathematical proportions that create natural visual harmony."
+              : overall >= 50
+              ? "Your logo has some geometric structure. Using the Perfectify slider can strengthen the mathematical precision of your curves."
+              : "Your logo is more organic than geometric. That's not bad! But the grid overlay may look more convincing after using the Perfectify slider to align curves."}
+          </p>
         </div>
 
         {/* Actions */}
@@ -171,21 +194,24 @@ export function AnalysisCard() {
   );
 }
 
-function ScoreRow({ label, value }: { label: string; value: number }) {
-  const color =
-    value >= 70 ? "bg-green-500" : value >= 40 ? "bg-yellow-500" : "bg-red-500";
+function ScoreRow({ label, value, explanation }: { label: string; value: number; explanation?: string }) {
+  const color = value >= 70 ? "bg-green-500" : value >= 40 ? "bg-yellow-500" : "bg-red-500";
+  const rating = value >= 80 ? "Excellent" : value >= 60 ? "Good" : value >= 40 ? "Fair" : "Low";
   return (
     <div>
       <div className="flex justify-between mb-1">
         <span className="text-sm text-neutral-400">{label}</span>
-        <span className="text-sm font-mono font-bold text-neutral-200">{value}%</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-neutral-600">{rating}</span>
+          <span className="text-sm font-mono font-bold text-neutral-200">{value}%</span>
+        </div>
       </div>
       <div className="h-2 bg-neutral-800 rounded-full overflow-hidden">
-        <div
-          className={`h-full ${color} rounded-full transition-all duration-700`}
-          style={{ width: `${value}%` }}
-        />
+        <div className={`h-full ${color} rounded-full transition-all duration-700`} style={{ width: `${value}%` }} />
       </div>
+      {explanation && (
+        <p className="text-[10px] text-neutral-600 mt-1 leading-relaxed">{explanation}</p>
+      )}
     </div>
   );
 }

@@ -30,9 +30,18 @@ export interface GridRect {
   type: "golden-rect" | "bounding";
 }
 
+export interface SimpleCircle {
+  cx: number;
+  cy: number;
+  r: number;
+  type: "golden" | "concentric";
+}
+
 export interface GridData {
   fittedCircles: FittedCircle[];
   idealCircles: IdealCircle[];
+  goldenCircles: SimpleCircle[];
+  concentricCircles: SimpleCircle[];
   goldenRects: GridRect[];
   thirdLines: GridLine[];
   diagonalLines: GridLine[];
@@ -288,6 +297,23 @@ export function generateGrid(edgeData: EdgeData, canvasWidth: number, canvasHeig
     verticalLines.push({ x1: lx + vertStep * i, y1: ly, x2: lx + vertStep * i, y2: ly + bounds.height, type: "vertical" });
   }
 
+  // Golden ratio circles: Fibonacci-scaled radii from center of mass
+  const goldenCircles: SimpleCircle[] = [];
+  const goldenBaseUnit = Math.min(bounds.width, bounds.height) / 21;
+  for (const fib of FIBONACCI) {
+    const r = fib * goldenBaseUnit;
+    if (r < 3 || r > logoSize * 1.5) continue;
+    goldenCircles.push({ cx, cy, r, type: "golden" });
+  }
+
+  // Concentric circles: evenly spaced from center of mass
+  const concentricCircles: SimpleCircle[] = [];
+  const maxConcentricR = Math.max(bounds.width, bounds.height) * 0.7;
+  for (let i = 1; i <= 7; i++) {
+    const r = (maxConcentricR * i) / 7;
+    concentricCircles.push({ cx, cy, r, type: "concentric" });
+  }
+
   // Scores
   const tolerance = logoSize * 0.025;
 
@@ -324,7 +350,7 @@ export function generateGrid(edgeData: EdgeData, canvasWidth: number, canvasHeig
   const gridAlignScore = edgePoints.length > 0 ? Math.min(100, Math.round((alignHits / edgePoints.length) * 100)) : 0;
 
   return {
-    fittedCircles, idealCircles, goldenRects, thirdLines, diagonalLines, baselineLines, verticalLines, constructionLines,
+    fittedCircles, idealCircles, goldenCircles, concentricCircles, goldenRects, thirdLines, diagonalLines, baselineLines, verticalLines, constructionLines,
     scores: { goldenRatio: goldenScore, symmetry: symmetryScore, gridAlignment: gridAlignScore },
   };
 }

@@ -4,6 +4,8 @@ import type { GridData } from "./grid-generator";
 export interface GridSettings {
   fittedCircles: boolean;
   idealCircles: boolean;
+  goldenCircles: boolean;
+  concentricCircles: boolean;
   goldenRect: boolean;
   ruleOfThirds: boolean;
   diagonals: boolean;
@@ -44,6 +46,8 @@ interface LogoStore {
 const defaultSettings: GridSettings = {
   fittedCircles: true,
   idealCircles: false,
+  goldenCircles: false,
+  concentricCircles: false,
   goldenRect: true,
   ruleOfThirds: false,
   diagonals: true,
