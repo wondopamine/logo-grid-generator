@@ -137,14 +137,14 @@ function mergeCircles(circles: FittedCircle[], mergeThreshold: number): FittedCi
 export function generateGrid(edgeData: EdgeData, canvasWidth: number, canvasHeight: number): GridData {
   const { arcs, bounds, centerOfMass, edgePoints, logoSize } = edgeData;
 
-  // Maximum fit error: tighter tolerance = circles must closely trace curves
-  const maxFitError = logoSize * 0.025;
-  // Minimum radius: at least 3% of logo size
-  const minRadius = logoSize * 0.03;
-  // Maximum radius: no bigger than the logo itself
-  const maxRadius = logoSize * 1.2;
-  // Minimum arc coverage: circle must cover at least 10% of its circumference
-  const minArcCoverage = 0.10;
+  // Maximum fit error: 5% of logo size (organic curves need more tolerance)
+  const maxFitError = logoSize * 0.05;
+  // Minimum radius: at least 1.5% of logo size (allow small construction circles)
+  const minRadius = logoSize * 0.015;
+  // Maximum radius: up to 1.5x the logo
+  const maxRadius = logoSize * 1.5;
+  // Minimum arc coverage: 5% of circumference (small arcs can still be meaningful)
+  const minArcCoverage = 0.05;
 
   // Fit circles to each arc
   let fittedCircles: FittedCircle[] = [];
@@ -167,7 +167,7 @@ export function generateGrid(edgeData: EdgeData, canvasWidth: number, canvasHeig
       if (d < maxFitError * 1.5) closePoints++;
     }
     const closeRatio = closePoints / arc.points.length;
-    if (closeRatio < 0.7) continue; // 70% of points must be close to the circle
+    if (closeRatio < 0.5) continue; // 50% of points must be close to the circle
 
     fittedCircles.push({
       cx: fit.cx,
@@ -190,11 +190,11 @@ export function generateGrid(edgeData: EdgeData, canvasWidth: number, canvasHeig
   });
 
   // Merge similar circles (same curve detected from adjacent contour segments)
-  const mergeThreshold = logoSize * 0.06;
+  const mergeThreshold = logoSize * 0.035;
   fittedCircles = mergeCircles(fittedCircles, mergeThreshold);
 
-  // Keep only the best circles — fewer is better for a clean grid
-  fittedCircles = fittedCircles.slice(0, 10);
+  // Keep the best circles — enough to cover the major curves
+  fittedCircles = fittedCircles.slice(0, 15);
 
   // Compute Fibonacci base unit
   const radii = fittedCircles.map(c => c.r).sort((a, b) => a - b);

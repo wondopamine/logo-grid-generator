@@ -178,9 +178,9 @@ function segmentArcs(contour: Contour, minArcPixelLength: number): ArcSegment[] 
   const arcs: ArcSegment[] = [];
 
   // Find corners: sharp curvature changes or near-zero curvature (straight segments)
-  const cornerThreshold = 0.012;
+  const cornerThreshold = 0.008;
   const corners: number[] = [0];
-  const minSegPoints = Math.max(8, Math.floor(minArcPixelLength / 1.5));
+  const minSegPoints = Math.max(5, Math.floor(minArcPixelLength));
 
   for (let i = k + 1; i < pts.length - k - 1; i++) {
     const absCurv = Math.abs(curvature[i]);
@@ -209,13 +209,12 @@ function segmentArcs(contour: Contour, minArcPixelLength: number): ArcSegment[] 
     if (curvSlice.length < 3) continue;
 
     const avgCurv = curvSlice.reduce((s, v) => s + Math.abs(v), 0) / curvSlice.length;
-    if (avgCurv < 0.001) continue; // too straight
+    if (avgCurv < 0.0005) continue; // too straight
 
-    // Check curvature consistency: standard deviation should be low relative to mean
-    // (a good arc has consistent curvature, not wildly varying)
+    // Curvature consistency: allow organic curves (higher tolerance)
     const variance = curvSlice.reduce((s, v) => s + (Math.abs(v) - avgCurv) ** 2, 0) / curvSlice.length;
     const stddev = Math.sqrt(variance);
-    if (avgCurv > 0.001 && stddev / avgCurv > 2.0) continue; // too inconsistent
+    if (avgCurv > 0.001 && stddev / avgCurv > 3.5) continue; // only reject wildly inconsistent
 
     arcs.push({ points: segPts, arcLength: arcLen });
   }
@@ -251,15 +250,15 @@ export function detectEdges(imageData: ImageData): EdgeData {
   }
 
   const { mag, dir, maxMag } = sobelEdges(blurred, width, height);
-  const threshold = maxMag * 0.15; // slightly higher threshold to reduce noise
+  const threshold = maxMag * 0.12;
   const thinEdges = nonMaxSuppression(mag, dir, width, height, threshold);
 
-  // Minimum contour length scales with logo size — need substantial contours
-  const minContourLen = Math.max(20, Math.floor(logoSize / 15));
+  // Minimum contour length: ~2% of logo size (lower = more contours found)
+  const minContourLen = Math.max(12, Math.floor(logoSize / 50));
   const contours = traceContours(thinEdges, width, height, minContourLen);
 
-  // Minimum arc length: at least 5% of logo size — no tiny arcs
-  const minArcLen = Math.max(15, Math.floor(logoSize / 20));
+  // Minimum arc length: ~1.5% of logo size (allow smaller construction circles)
+  const minArcLen = Math.max(8, Math.floor(logoSize / 60));
   const allArcs: ArcSegment[] = [];
   for (const contour of contours) {
     const arcs = segmentArcs(contour, minArcLen);
