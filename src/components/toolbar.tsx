@@ -12,6 +12,7 @@ import { Upload, Download, RotateCcw, Share2, Grid3X3 } from "lucide-react";
 import { useCallback, useRef } from "react";
 import { detectEdges } from "@/lib/edge-detection";
 import { generateGrid } from "@/lib/grid-generator";
+import { analyzeSmartGrid, computeDeviationMap } from "@/lib/smart-grid";
 import { getCanvasForExport } from "./logo-canvas";
 
 export function Toolbar() {
@@ -25,6 +26,8 @@ export function Toolbar() {
     setImage,
     setOriginalImageData,
     setGridData,
+    setSmartGridResult,
+    setDeviationMap,
     setProcessing,
     setAnimationProgress,
     setShowAnalysis,
@@ -56,8 +59,12 @@ export function Toolbar() {
 
         const edgeData = detectEdges(imageData);
         const grid = generateGrid(edgeData, img.width, img.height, imageData);
+        const smartResult = analyzeSmartGrid(edgeData);
+        const devMap = computeDeviationMap(edgeData.edgePoints, smartResult.circles, img.width, img.height);
 
         setGridData(grid);
+        setSmartGridResult(smartResult);
+        setDeviationMap(devMap);
         setProcessing(false);
 
         let start: number | null = null;

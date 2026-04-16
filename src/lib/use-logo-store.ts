@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { GridData } from "./grid-generator";
+import type { SmartGridResult } from "./smart-grid";
 
 export interface GridSettings {
   fittedCircles: boolean;
@@ -25,6 +26,9 @@ export interface GridSettings {
   offsetY: number;
   warpStrength: number;
   showWarped: boolean;
+  deviationMode: boolean;
+  deviationTolerance: number;
+  smartGrid: boolean;
 }
 
 interface LogoStore {
@@ -33,6 +37,8 @@ interface LogoStore {
   originalImageData: ImageData | null;
   warpedImageData: ImageData | null;
   gridData: GridData | null;
+  smartGridResult: SmartGridResult | null;
+  deviationMap: Float32Array | null;
   isProcessing: boolean;
   animationProgress: number;
   settings: GridSettings;
@@ -41,6 +47,8 @@ interface LogoStore {
   setOriginalImageData: (data: ImageData) => void;
   setWarpedImageData: (data: ImageData | null) => void;
   setGridData: (data: GridData) => void;
+  setSmartGridResult: (result: SmartGridResult | null) => void;
+  setDeviationMap: (map: Float32Array | null) => void;
   setProcessing: (processing: boolean) => void;
   setAnimationProgress: (progress: number) => void;
   updateSettings: (partial: Partial<GridSettings>) => void;
@@ -72,6 +80,9 @@ const defaultSettings: GridSettings = {
   offsetY: 0,
   warpStrength: 0,
   showWarped: false,
+  deviationMode: false,
+  deviationTolerance: 8,
+  smartGrid: true,
 };
 
 export const useLogoStore = create<LogoStore>((set) => ({
@@ -80,6 +91,8 @@ export const useLogoStore = create<LogoStore>((set) => ({
   originalImageData: null,
   warpedImageData: null,
   gridData: null,
+  smartGridResult: null,
+  deviationMap: null,
   isProcessing: false,
   animationProgress: 0,
   settings: defaultSettings,
@@ -88,6 +101,8 @@ export const useLogoStore = create<LogoStore>((set) => ({
   setOriginalImageData: (data) => set({ originalImageData: data }),
   setWarpedImageData: (data) => set({ warpedImageData: data }),
   setGridData: (data) => set({ gridData: data }),
+  setSmartGridResult: (result) => set({ smartGridResult: result }),
+  setDeviationMap: (map) => set({ deviationMap: map }),
   setProcessing: (processing) => set({ isProcessing: processing }),
   setAnimationProgress: (progress) => set({ animationProgress: progress }),
   updateSettings: (partial) =>
@@ -100,6 +115,8 @@ export const useLogoStore = create<LogoStore>((set) => ({
       originalImageData: null,
       warpedImageData: null,
       gridData: null,
+      smartGridResult: null,
+      deviationMap: null,
       isProcessing: false,
       animationProgress: 0,
       settings: defaultSettings,

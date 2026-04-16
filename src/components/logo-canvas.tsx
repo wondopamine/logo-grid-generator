@@ -53,7 +53,7 @@ export function LogoCanvas() {
     if (!ctx) return;
 
     const state = useLogoStore.getState();
-    const { imageElement, warpedImageData, gridData, settings, animationProgress, isProcessing } = state;
+    const { imageElement, warpedImageData, gridData, smartGridResult, deviationMap, settings, animationProgress, isProcessing } = state;
 
     const dpr = window.devicePixelRatio || 1;
     const rect = container.getBoundingClientRect();
@@ -193,7 +193,40 @@ export function LogoCanvas() {
         drawLines(ctx, gridData.verticalLines, drawX, drawY, scaleX, scaleY, settings, progress, "line");
       }
 
+      // Smart grid circles
+      if (settings.smartGrid && smartGridResult) {
+        drawSmartCircles(ctx, smartGridResult.circles, drawX, drawY, scaleX, scaleY, settings, progress);
+      }
+
       ctx.restore();
+    }
+
+    // Deviation overlay
+    if (settings.deviationMode && deviationMap && imageElement) {
+      const scaleX = drawW / imageElement.width;
+      const scaleY = drawH / imageElement.height;
+      const tol = settings.deviationTolerance;
+
+      for (let py = 0; py < imageElement.height; py += 2) {
+        for (let px = 0; px < imageElement.width; px += 2) {
+          const idx = py * imageElement.width + px;
+          const dev = deviationMap[idx];
+          if (dev < 0) continue; // not an edge pixel
+
+          const sx = drawX + px * scaleX;
+          const sy = drawY + py * scaleY;
+
+          if (dev <= tol) {
+            // Green: edge aligns with a circle
+            ctx.fillStyle = `rgba(34, 197, 94, ${0.6 - (dev / tol) * 0.4})`;
+          } else {
+            // Red: edge deviates
+            const intensity = Math.min(1, dev / (tol * 3));
+            ctx.fillStyle = `rgba(239, 68, 68, ${0.3 + intensity * 0.4})`;
+          }
+          ctx.fillRect(sx - 1, sy - 1, 3 * scaleX, 3 * scaleY);
+        }
+      }
     }
 
     // Processing shimmer
@@ -224,6 +257,54 @@ export function LogoCanvas() {
       <canvas ref={canvasRef} className="absolute inset-0" />
     </div>
   );
+}
+
+function drawSmartCircles(
+  ctx: CanvasRenderingContext2D,
+  circles: { cx: number; cy: number; r: number; arcPoints: { x: number; y: number }[]; arcCoverage: number; explainedCount: number }[],
+  ox: number, oy: number, sx: number, sy: number,
+  settings: { opacity: number; strokeWidth: number; gridColor: string },
+  progress: number
+) {
+  const scale = Math.min(sx, sy);
+
+  circles.forEach((c, i) => {
+    const delay = i / circles.length;
+    const p = Math.max(0, Math.min(1, (progress - delay * 0.3) / 0.7));
+    if (p <= 0) return;
+
+    const cx = ox + c.cx * sx;
+    const cy = oy + c.cy * sy;
+    const r = c.r * scale;
+
+    // Full circle (faint)
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2 * p);
+    ctx.strokeStyle = getColor(settings.gridColor, "fitted", settings.opacity * 0.4);
+    ctx.lineWidth = settings.strokeWidth * 0.8;
+    ctx.stroke();
+
+    // Highlight the explained arc (bright)
+    if (p > 0.3 && c.arcPoints.length > 1) {
+      ctx.beginPath();
+      const len = Math.floor(c.arcPoints.length * Math.min(1, (p - 0.3) / 0.7));
+      ctx.moveTo(ox + c.arcPoints[0].x * sx, oy + c.arcPoints[0].y * sy);
+      for (let j = 1; j < len; j++) {
+        ctx.lineTo(ox + c.arcPoints[j].x * sx, oy + c.arcPoints[j].y * sy);
+      }
+      ctx.strokeStyle = getColor(settings.gridColor, "fitted", Math.min(100, settings.opacity * 1.3));
+      ctx.lineWidth = settings.strokeWidth * 2.5;
+      ctx.stroke();
+    }
+
+    // Center dot
+    if (p > 0.8) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+      ctx.fillStyle = getColor(settings.gridColor, "fitted", settings.opacity);
+      ctx.fill();
+    }
+  });
 }
 
 function drawSimpleCircles(

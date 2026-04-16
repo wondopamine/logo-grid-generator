@@ -71,7 +71,7 @@ const COLOR_OPTIONS = [
 ];
 
 export function GridSidebar() {
-  const { gridData, settings, updateSettings, originalImageData, setWarpedImageData } = useLogoStore();
+  const { gridData, smartGridResult, settings, updateSettings, originalImageData, setWarpedImageData } = useLogoStore();
 
   const handleWarpChange = useCallback((strength: number) => {
     updateSettings({ warpStrength: strength, showWarped: strength > 0 });
@@ -104,8 +104,45 @@ export function GridSidebar() {
           </Section>
         )}
 
+        {/* Smart Grid */}
+        <Section title="Smart Grid" defaultOpen={true}
+          description="Sliding-window analysis that finds the best set of circles explaining your logo's geometry. Circles are ranked by how much of the logo they account for.">
+          <div className="space-y-1">
+            <GridToggle label="Smart Circles" checked={settings.smartGrid} onChange={(v) => updateSettings({ smartGrid: v })}
+              score={smartGridResult?.coveragePercent}
+              description="Circles selected by explanation power, not just curve fitting" />
+          </div>
+          {smartGridResult && (
+            <div className="mt-3 p-2.5 rounded-lg bg-neutral-800/50 text-xs text-neutral-400 space-y-1">
+              <div className="flex justify-between">
+                <span>Circles found</span>
+                <span className="text-neutral-200 font-mono">{smartGridResult.circles.length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Edge coverage</span>
+                <span className="text-neutral-200 font-mono">{smartGridResult.coveragePercent}%</span>
+              </div>
+            </div>
+          )}
+        </Section>
+
+        {/* Deviation Analysis */}
+        <Section title="Deviation Analysis" defaultOpen={false}
+          description="See where your logo's edges match the grid circles (green) vs where they deviate (red). Helps identify what to tweak.">
+          <div className="space-y-3">
+            <GridToggle label="Show Deviations" checked={settings.deviationMode} onChange={(v) => updateSettings({ deviationMode: v })}
+              description="Green = edges on a circle. Red = edges that deviate." />
+            {settings.deviationMode && (
+              <div>
+                <Label className="text-xs text-neutral-400 mb-2 block">Tolerance: {settings.deviationTolerance}px</Label>
+                <Slider value={[settings.deviationTolerance]} onValueChange={(v) => updateSettings({ deviationTolerance: Array.isArray(v) ? v[0] : v })} min={1} max={20} step={1} className="w-full" />
+              </div>
+            )}
+          </div>
+        </Section>
+
         {/* Curve-Traced Circles */}
-        <Section title="Curve-Traced Circles"
+        <Section title="Curve-Traced Circles" defaultOpen={false}
           description="Circles fitted to the actual curves in your logo using least-squares math. Each circle traces a real arc in the letterform.">
           <div className="space-y-1">
             <GridToggle label="Fitted Circles" checked={settings.fittedCircles} onChange={(v) => updateSettings({ fittedCircles: v })} score={gridData?.scores.gridAlignment}

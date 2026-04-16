@@ -5,10 +5,11 @@ import { Upload, Image as ImageIcon } from "lucide-react";
 import { useLogoStore } from "@/lib/use-logo-store";
 import { detectEdges } from "@/lib/edge-detection";
 import { generateGrid } from "@/lib/grid-generator";
+import { analyzeSmartGrid, computeDeviationMap } from "@/lib/smart-grid";
 
 export function UploadZone() {
   const [isDragging, setIsDragging] = useState(false);
-  const { imageUrl, setImage, setOriginalImageData, setGridData, setProcessing, setAnimationProgress } =
+  const { imageUrl, setImage, setOriginalImageData, setGridData, setSmartGridResult, setDeviationMap, setProcessing, setAnimationProgress } =
     useLogoStore();
 
   const processImage = useCallback(
@@ -43,7 +44,13 @@ export function UploadZone() {
         const edgeData = detectEdges(imageData);
         const gridData = generateGrid(edgeData, img.width, img.height, imageData);
 
+        // Run smart grid analysis
+        const smartResult = analyzeSmartGrid(edgeData);
+        const devMap = computeDeviationMap(edgeData.edgePoints, smartResult.circles, img.width, img.height);
+
         setGridData(gridData);
+        setSmartGridResult(smartResult);
+        setDeviationMap(devMap);
         setProcessing(false);
 
         // Animate grid reveal
