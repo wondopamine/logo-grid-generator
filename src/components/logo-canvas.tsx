@@ -144,6 +144,31 @@ export function LogoCanvas() {
         drawSimpleCircles(ctx, gridData.concentricCircles, drawX, drawY, scaleX, scaleY, settings, progress);
       }
 
+      // Bounding / Inscribed circles
+      if (settings.boundingCircles) {
+        drawSimpleCircles(ctx, gridData.boundingCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+      }
+
+      // Osculating circles
+      if (settings.osculatingCircles) {
+        drawSimpleCircles(ctx, gridData.osculatingCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+      }
+
+      // Corner radius circles
+      if (settings.cornerRadiusCircles) {
+        drawSimpleCircles(ctx, gridData.cornerRadiusCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+      }
+
+      // Tangent circles
+      if (settings.tangentCircles) {
+        drawSimpleCircles(ctx, gridData.tangentCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+      }
+
+      // Keypoint circles
+      if (settings.keypointCircles) {
+        drawSimpleCircles(ctx, gridData.keypointCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+      }
+
       // Construction lines between circle centers
       if (settings.constructionLines) {
         drawLines(ctx, gridData.constructionLines, drawX, drawY, scaleX, scaleY, settings, progress, "construction");
@@ -412,6 +437,11 @@ export function getCanvasForExport(
     if (settings.idealCircles) drawIdealCircles(ctx, gridData.idealCircles, 0, 0, sx, sy, settings, 1);
     if (settings.goldenCircles) drawSimpleCircles(ctx, gridData.goldenCircles, 0, 0, sx, sy, settings, 1);
     if (settings.concentricCircles) drawSimpleCircles(ctx, gridData.concentricCircles, 0, 0, sx, sy, settings, 1);
+    if (settings.boundingCircles) drawSimpleCircles(ctx, gridData.boundingCircles, 0, 0, sx, sy, settings, 1);
+    if (settings.osculatingCircles) drawSimpleCircles(ctx, gridData.osculatingCircles, 0, 0, sx, sy, settings, 1);
+    if (settings.cornerRadiusCircles) drawSimpleCircles(ctx, gridData.cornerRadiusCircles, 0, 0, sx, sy, settings, 1);
+    if (settings.tangentCircles) drawSimpleCircles(ctx, gridData.tangentCircles, 0, 0, sx, sy, settings, 1);
+    if (settings.keypointCircles) drawSimpleCircles(ctx, gridData.keypointCircles, 0, 0, sx, sy, settings, 1);
     if (settings.constructionLines) drawLines(ctx, gridData.constructionLines, 0, 0, sx, sy, settings, 1, "construction");
     if (settings.goldenRect) drawRects(ctx, gridData.goldenRects, 0, 0, sx, sy, settings, 1);
     if (settings.ruleOfThirds) drawLines(ctx, gridData.thirdLines, 0, 0, sx, sy, settings, 1, "line");

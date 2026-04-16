@@ -6,6 +6,11 @@ export interface GridSettings {
   idealCircles: boolean;
   goldenCircles: boolean;
   concentricCircles: boolean;
+  boundingCircles: boolean;
+  osculatingCircles: boolean;
+  cornerRadiusCircles: boolean;
+  tangentCircles: boolean;
+  keypointCircles: boolean;
   goldenRect: boolean;
   ruleOfThirds: boolean;
   diagonals: boolean;
@@ -48,6 +53,11 @@ const defaultSettings: GridSettings = {
   idealCircles: false,
   goldenCircles: false,
   concentricCircles: false,
+  boundingCircles: false,
+  osculatingCircles: false,
+  cornerRadiusCircles: false,
+  tangentCircles: false,
+  keypointCircles: false,
   goldenRect: true,
   ruleOfThirds: false,
   diagonals: true,

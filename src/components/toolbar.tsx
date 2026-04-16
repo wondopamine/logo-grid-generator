@@ -55,7 +55,7 @@ export function Toolbar() {
         setOriginalImageData(imageData);
 
         const edgeData = detectEdges(imageData);
-        const grid = generateGrid(edgeData, img.width, img.height);
+        const grid = generateGrid(edgeData, img.width, img.height, imageData);
 
         setGridData(grid);
         setProcessing(false);

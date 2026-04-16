@@ -41,7 +41,7 @@ export function UploadZone() {
         setOriginalImageData(imageData);
 
         const edgeData = detectEdges(imageData);
-        const gridData = generateGrid(edgeData, img.width, img.height);
+        const gridData = generateGrid(edgeData, img.width, img.height, imageData);
 
         setGridData(gridData);
         setProcessing(false);

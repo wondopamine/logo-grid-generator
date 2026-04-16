@@ -4,12 +4,11 @@ import { useLogoStore } from "@/lib/use-logo-store";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { ChevronRight, Sparkles } from "lucide-react";
+import { ChevronDown, Sparkles } from "lucide-react";
 import { useState, useCallback } from "react";
 import { warpImage } from "@/lib/logo-warp";
 
-function CollapsibleGroup({
+function Section({
   title, children, defaultOpen = true, icon, description,
 }: {
   title: string; children: React.ReactNode; defaultOpen?: boolean;
@@ -17,19 +16,25 @@ function CollapsibleGroup({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div>
+    <div className="border-b border-neutral-800/60">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 w-full py-2 px-3 text-xs font-medium text-neutral-400 uppercase tracking-wider hover:text-neutral-300 transition-colors"
+        className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-neutral-800/30 transition-colors"
       >
-        <ChevronRight className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`} />
-        {icon}
-        {title}
+        <span className="flex items-center gap-2 text-sm font-medium text-neutral-200">
+          {icon}
+          {title}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-neutral-500 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      {description && open && (
-        <p className="text-[10px] text-neutral-600 px-3 pb-2 -mt-1">{description}</p>
+      {open && (
+        <div className="px-4 pb-4">
+          {description && (
+            <p className="text-xs text-neutral-400 mb-3 leading-relaxed">{description}</p>
+          )}
+          {children}
+        </div>
       )}
-      {open && <div className="px-3 pb-3 space-y-3">{children}</div>}
     </div>
   );
 }
@@ -41,18 +46,18 @@ function GridToggle({
   score?: number; description?: string;
 }) {
   return (
-    <div>
+    <div className="py-1.5">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Switch checked={checked} onCheckedChange={onChange} className="scale-75" />
-          <Label className="text-sm text-neutral-300 cursor-pointer">{label}</Label>
+        <div className="flex items-center gap-2.5">
+          <Switch checked={checked} onCheckedChange={onChange} className="scale-[0.8]" />
+          <span className="text-[13px] text-neutral-200">{label}</span>
         </div>
         {score !== undefined && score > 0 && (
-          <span className="text-[10px] font-mono text-neutral-500">{score}%</span>
+          <span className="text-xs font-mono text-neutral-500">{score}%</span>
         )}
       </div>
       {description && (
-        <p className="text-[10px] text-neutral-600 ml-10 mt-0.5">{description}</p>
+        <p className="text-xs text-neutral-400 ml-9 mt-1 leading-relaxed">{description}</p>
       )}
     </div>
   );
@@ -66,10 +71,7 @@ const COLOR_OPTIONS = [
 ];
 
 export function GridSidebar() {
-  const {
-    gridData, settings, updateSettings,
-    originalImageData, setWarpedImageData,
-  } = useLogoStore();
+  const { gridData, settings, updateSettings, originalImageData, setWarpedImageData } = useLogoStore();
 
   const handleWarpChange = useCallback((strength: number) => {
     updateSettings({ warpStrength: strength, showWarped: strength > 0 });
@@ -82,200 +84,120 @@ export function GridSidebar() {
   }, [originalImageData, gridData, updateSettings, setWarpedImageData]);
 
   return (
-    <div className="w-[280px] bg-[#141414] border-l border-neutral-800 overflow-y-auto flex flex-col">
-      <div className="p-3 border-b border-neutral-800">
-        <h2 className="text-xs font-medium text-neutral-400 uppercase tracking-wider">
-          Grid Controls
-        </h2>
+    <div className="w-[300px] bg-[#141414] border-l border-neutral-800 overflow-y-auto flex flex-col">
+      <div className="px-4 py-3 border-b border-neutral-800">
+        <h2 className="text-sm font-semibold text-neutral-200 tracking-wide">Grid Controls</h2>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {/* Perfectify */}
         {gridData && gridData.fittedCircles.length > 0 && (
-          <>
-            <CollapsibleGroup
-              title="Perfectify"
-              icon={<Sparkles className="w-3 h-3 text-cyan-400" />}
-              description="Subtly warp your logo so its curves snap onto mathematically perfect circles. Makes the logo look intentionally constructed on a geometric grid."
-            >
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-xs text-neutral-500 mb-2 block">
-                    Warp: {settings.warpStrength}%
-                  </Label>
-                  <Slider
-                    value={[settings.warpStrength]}
-                    onValueChange={(v) => handleWarpChange(Array.isArray(v) ? v[0] : v)}
-                    min={0} max={100} step={5} className="w-full"
-                  />
-                </div>
-                <GridToggle
-                  label="Show warped"
-                  checked={settings.showWarped}
-                  onChange={(v) => updateSettings({ showWarped: v })}
-                  description="Compare original vs warped version"
-                />
+          <Section title="Perfectify" icon={<Sparkles className="w-3.5 h-3.5 text-cyan-400" />}
+            description="Warp your logo so its curves snap onto perfect geometric circles. Makes the logo look intentionally designed on a mathematical grid.">
+            <div className="space-y-4">
+              <div>
+                <Label className="text-xs text-neutral-400 mb-2 block">Warp: {settings.warpStrength}%</Label>
+                <Slider value={[settings.warpStrength]} onValueChange={(v) => handleWarpChange(Array.isArray(v) ? v[0] : v)} min={0} max={100} step={5} className="w-full" />
               </div>
-            </CollapsibleGroup>
-            <Separator className="bg-neutral-800" />
-          </>
+              <GridToggle label="Show warped" checked={settings.showWarped} onChange={(v) => updateSettings({ showWarped: v })} description="Compare original vs warped version" />
+            </div>
+          </Section>
         )}
 
         {/* Curve-Traced Circles */}
-        <CollapsibleGroup
-          title="Curve-Traced Circles"
-          description="Circles mathematically fitted to the actual curves in your logo. Each circle traces a specific arc: a corner radius, a letter curve, or a stroke bend."
-        >
-          <GridToggle
-            label="Fitted Circles"
-            checked={settings.fittedCircles}
-            onChange={(v) => updateSettings({ fittedCircles: v })}
-            score={gridData?.scores.gridAlignment}
-            description="Circles that trace your logo's actual curves using least-squares fitting"
-          />
-          <GridToggle
-            label="Ideal (Fibonacci)"
-            checked={settings.idealCircles}
-            onChange={(v) => updateSettings({ idealCircles: v })}
-            score={gridData?.scores.goldenRatio}
-            description="Same circles with radii snapped to Fibonacci ratios (1, 2, 3, 5, 8, 13...)"
-          />
-          <GridToggle
-            label="Construction Lines"
-            checked={settings.constructionLines}
-            onChange={(v) => updateSettings({ constructionLines: v })}
-            description="Lines connecting circle centers, showing structural relationships"
-          />
-        </CollapsibleGroup>
-
-        <Separator className="bg-neutral-800" />
+        <Section title="Curve-Traced Circles"
+          description="Circles fitted to the actual curves in your logo using least-squares math. Each circle traces a real arc in the letterform.">
+          <div className="space-y-1">
+            <GridToggle label="Fitted Circles" checked={settings.fittedCircles} onChange={(v) => updateSettings({ fittedCircles: v })} score={gridData?.scores.gridAlignment}
+              description="Circles tracing your logo's actual curves (Kasa method)" />
+            <GridToggle label="Ideal (Fibonacci)" checked={settings.idealCircles} onChange={(v) => updateSettings({ idealCircles: v })} score={gridData?.scores.goldenRatio}
+              description="Same circles with radii snapped to Fibonacci ratios (1, 2, 3, 5, 8, 13...)" />
+            <GridToggle label="Osculating Circles" checked={settings.osculatingCircles} onChange={(v) => updateSettings({ osculatingCircles: v })}
+              description="Circle of curvature at each arc's tightest bend. Radius = 1/curvature." />
+            <GridToggle label="Corner Radii" checked={settings.cornerRadiusCircles} onChange={(v) => updateSettings({ cornerRadiusCircles: v })}
+              description="Turning radius at each corner where curves meet" />
+            <GridToggle label="Construction Lines" checked={settings.constructionLines} onChange={(v) => updateSettings({ constructionLines: v })}
+              description="Lines connecting circle centers, showing structural relationships" />
+          </div>
+        </Section>
 
         {/* Compositional Circles */}
-        <CollapsibleGroup
-          title="Compositional Circles"
-          description="Overlay circles for visual composition and proportion reference. Useful for tweaking your logo to align with classical proportions."
-        >
-          <GridToggle
-            label="Golden Ratio"
-            checked={settings.goldenCircles}
-            onChange={(v) => updateSettings({ goldenCircles: v })}
-            description="Fibonacci-sequence radii from the logo's center of mass (1, 1, 2, 3, 5, 8, 13, 21)"
-          />
-          <GridToggle
-            label="Concentric"
-            checked={settings.concentricCircles}
-            onChange={(v) => updateSettings({ concentricCircles: v })}
-            description="Evenly spaced rings from center. Useful for checking radial balance."
-          />
-        </CollapsibleGroup>
+        <Section title="Compositional Circles"
+          description="Circles for proportion reference and spatial balance. Toggle these to find the right visual framework for your logo.">
+          <div className="space-y-1">
+            <GridToggle label="Golden Ratio" checked={settings.goldenCircles} onChange={(v) => updateSettings({ goldenCircles: v })}
+              description="Fibonacci radii from center of mass (1, 1, 2, 3, 5, 8, 13, 21)" />
+            <GridToggle label="Concentric" checked={settings.concentricCircles} onChange={(v) => updateSettings({ concentricCircles: v })}
+              description="Evenly spaced rings for checking radial balance" />
+            <GridToggle label="Bounding / Inscribed" checked={settings.boundingCircles} onChange={(v) => updateSettings({ boundingCircles: v })}
+              description="Smallest circle enclosing the logo (Welzl algorithm) + largest circle fitting inside" />
+            <GridToggle label="Tangent Circles" checked={settings.tangentCircles} onChange={(v) => updateSettings({ tangentCircles: v })}
+              description="Circles tangent to pairs of fitted circles (Apollonius construction)" />
+            <GridToggle label="Keypoint Circles" checked={settings.keypointCircles} onChange={(v) => updateSettings({ keypointCircles: v })}
+              description="Circumscribed circles through boundary extreme points" />
+          </div>
+        </Section>
 
-        <Separator className="bg-neutral-800" />
-
-        {/* Geometric */}
-        <CollapsibleGroup
-          title="Geometric Grids"
-          description="Classical layout grids used in graphic design to establish proportion and visual balance."
-        >
-          <GridToggle
-            label="Golden Rectangle"
-            checked={settings.goldenRect}
-            onChange={(v) => updateSettings({ goldenRect: v })}
-            description="Bounding box subdivided by the golden ratio (1:1.618). The most harmonious proportion in nature."
-          />
-          <GridToggle
-            label="Rule of Thirds"
-            checked={settings.ruleOfThirds}
-            onChange={(v) => updateSettings({ ruleOfThirds: v })}
-            description="Divides the frame into 9 equal parts. Key elements should sit at intersections."
-          />
-          <GridToggle
-            label="Diagonals"
-            checked={settings.diagonals}
-            onChange={(v) => updateSettings({ diagonals: v })}
-            description="Corner-to-corner diagonals and center axes. Shows dynamic lines of movement."
-          />
-        </CollapsibleGroup>
-
-        <Separator className="bg-neutral-800" />
-
-        {/* Baseline */}
-        <CollapsibleGroup
-          title="Baseline Grids"
-          defaultOpen={false}
-          description="Even spacing grids for checking vertical and horizontal rhythm in your logo."
-        >
-          <GridToggle
-            label="Horizontal"
-            checked={settings.baseline}
-            onChange={(v) => updateSettings({ baseline: v })}
-            description="Horizontal lines at 1/8 intervals. Check if elements align to a consistent baseline."
-          />
-          <GridToggle
-            label="Vertical Rhythm"
-            checked={settings.verticalRhythm}
-            onChange={(v) => updateSettings({ verticalRhythm: v })}
-            description="Vertical lines at 1/8 intervals. Check horizontal spacing consistency."
-          />
-        </CollapsibleGroup>
-
-        <Separator className="bg-neutral-800" />
+        {/* Geometric Grids */}
+        <Section title="Geometric Grids"
+          description="Classical layout grids for proportion and visual balance.">
+          <div className="space-y-1">
+            <GridToggle label="Golden Rectangle" checked={settings.goldenRect} onChange={(v) => updateSettings({ goldenRect: v })}
+              description="Bounding box subdivided by the golden ratio (1:1.618)" />
+            <GridToggle label="Rule of Thirds" checked={settings.ruleOfThirds} onChange={(v) => updateSettings({ ruleOfThirds: v })}
+              description="9-part grid. Key elements should sit at intersections." />
+            <GridToggle label="Diagonals" checked={settings.diagonals} onChange={(v) => updateSettings({ diagonals: v })}
+              description="Corner-to-corner diagonals and center axes" />
+            <GridToggle label="Horizontal Baseline" checked={settings.baseline} onChange={(v) => updateSettings({ baseline: v })}
+              description="Horizontal lines at 1/8 intervals" />
+            <GridToggle label="Vertical Rhythm" checked={settings.verticalRhythm} onChange={(v) => updateSettings({ verticalRhythm: v })}
+              description="Vertical lines at 1/8 intervals" />
+          </div>
+        </Section>
 
         {/* Appearance */}
-        <CollapsibleGroup title="Appearance" description="Control how the grid overlay looks.">
-          <div className="space-y-4">
+        <Section title="Appearance" description="Control how the grid overlay looks.">
+          <div className="space-y-5">
             <div>
-              <Label className="text-xs text-neutral-500 mb-2 block">Opacity: {settings.opacity}%</Label>
+              <Label className="text-xs text-neutral-400 mb-2 block">Opacity: {settings.opacity}%</Label>
               <Slider value={[settings.opacity]} onValueChange={(v) => updateSettings({ opacity: Array.isArray(v) ? v[0] : v })} min={10} max={100} step={5} className="w-full" />
             </div>
             <div>
-              <Label className="text-xs text-neutral-500 mb-2 block">Stroke: {settings.strokeWidth}px</Label>
+              <Label className="text-xs text-neutral-400 mb-2 block">Stroke: {settings.strokeWidth}px</Label>
               <Slider value={[settings.strokeWidth * 10]} onValueChange={(v) => updateSettings({ strokeWidth: (Array.isArray(v) ? v[0] : v) / 10 })} min={5} max={30} step={1} className="w-full" />
             </div>
             <div>
-              <Label className="text-xs text-neutral-500 mb-2 block">Scale: {settings.scale}%</Label>
+              <Label className="text-xs text-neutral-400 mb-2 block">Scale: {settings.scale}%</Label>
               <Slider value={[settings.scale]} onValueChange={(v) => updateSettings({ scale: Array.isArray(v) ? v[0] : v })} min={50} max={150} step={1} className="w-full" />
             </div>
             <div>
-              <Label className="text-xs text-neutral-500 mb-2 block">Color</Label>
+              <Label className="text-xs text-neutral-400 mb-2 block">Color</Label>
               <div className="flex gap-2">
                 {COLOR_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.key}
-                    onClick={() => updateSettings({ gridColor: opt.key })}
-                    className={`w-7 h-7 rounded-md border-2 transition-all ${settings.gridColor === opt.key ? "border-white scale-110" : "border-neutral-700 hover:border-neutral-500"}`}
-                    style={{ backgroundColor: opt.color }}
-                    title={opt.label}
-                  />
+                  <button key={opt.key} onClick={() => updateSettings({ gridColor: opt.key })}
+                    className={`w-8 h-8 rounded-lg border-2 transition-all ${settings.gridColor === opt.key ? "border-white scale-110" : "border-neutral-700 hover:border-neutral-500"}`}
+                    style={{ backgroundColor: opt.color }} title={opt.label} />
                 ))}
               </div>
             </div>
-          </div>
-        </CollapsibleGroup>
-
-        <Separator className="bg-neutral-800" />
-
-        <CollapsibleGroup title="Position" defaultOpen={false} description="Fine-tune grid placement relative to the logo.">
-          <div className="space-y-4">
             <div>
-              <Label className="text-xs text-neutral-500 mb-2 block">Offset X: {settings.offsetX}px</Label>
+              <Label className="text-xs text-neutral-400 mb-2 block">Offset X: {settings.offsetX}px</Label>
               <Slider value={[settings.offsetX]} onValueChange={(v) => updateSettings({ offsetX: Array.isArray(v) ? v[0] : v })} min={-100} max={100} step={1} className="w-full" />
             </div>
             <div>
-              <Label className="text-xs text-neutral-500 mb-2 block">Offset Y: {settings.offsetY}px</Label>
+              <Label className="text-xs text-neutral-400 mb-2 block">Offset Y: {settings.offsetY}px</Label>
               <Slider value={[settings.offsetY]} onValueChange={(v) => updateSettings({ offsetY: Array.isArray(v) ? v[0] : v })} min={-100} max={100} step={1} className="w-full" />
             </div>
           </div>
-        </CollapsibleGroup>
+        </Section>
       </div>
 
-      {/* Scores */}
+      {/* Analysis */}
       {gridData && (
-        <div className="border-t border-neutral-800 p-3 space-y-2">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-medium text-neutral-400 uppercase tracking-wider">Analysis</h3>
-            {gridData.fittedCircles.length > 0 && (
-              <span className="text-[10px] text-neutral-600">{gridData.fittedCircles.length} circles found</span>
-            )}
+        <div className="border-t border-neutral-800 p-4 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-sm font-semibold text-neutral-200">Analysis</h3>
+            <span className="text-xs text-neutral-500">{gridData.fittedCircles.length} circles</span>
           </div>
           <ScoreBar label="Golden Ratio" value={gridData.scores.goldenRatio} />
           <ScoreBar label="Symmetry" value={gridData.scores.symmetry} />
@@ -290,11 +212,11 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
   const color = value >= 70 ? "bg-green-500" : value >= 40 ? "bg-yellow-500" : "bg-red-500";
   return (
     <div>
-      <div className="flex justify-between text-xs mb-1">
+      <div className="flex justify-between text-xs mb-1.5">
         <span className="text-neutral-400">{label}</span>
-        <span className="font-mono text-neutral-300">{value}%</span>
+        <span className="font-mono font-medium text-neutral-200">{value}%</span>
       </div>
-      <div className="h-1 bg-neutral-800 rounded-full overflow-hidden">
+      <div className="h-1.5 bg-neutral-800 rounded-full overflow-hidden">
         <div className={`h-full ${color} rounded-full transition-all duration-500`} style={{ width: `${value}%` }} />
       </div>
     </div>
