@@ -99,6 +99,108 @@ function mlsSimilarity(
   out.y = b * ux + a * uy + qStarY;
 }
 
+/**
+ * MLS affine transform (Schaefer 2006, eq. 4 for affine).
+ * Same problem as similarity but M is a full 2×2 matrix — allows shear and
+ * non-uniform scale. More DOF means more dramatic local reshape; less rigid.
+ *
+ * Closed form:
+ *   Σ_pp = Σ w_i (p̂_i p̂_iᵀ)       (2×2 weighted covariance of p̂)
+ *   Σ_pq = Σ w_i (p̂_i q̂_iᵀ)       (2×2 cross-covariance)
+ *   M    = Σ_pq · Σ_pp⁻¹
+ *   f(v) = M (v − p*) + q*
+ */
+function mlsAffine(
+  vx: number,
+  vy: number,
+  pxArr: Float64Array,
+  pyArr: Float64Array,
+  qxArr: Float64Array,
+  qyArr: Float64Array,
+  pwArr: Float64Array,
+  n: number,
+  out: { x: number; y: number }
+): void {
+  let wSum = 0;
+  let pStarX = 0, pStarY = 0, qStarX = 0, qStarY = 0;
+  const w = __wScratch;
+
+  for (let i = 0; i < n; i++) {
+    const dx = pxArr[i] - vx;
+    const dy = pyArr[i] - vy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < 1e-6) {
+      out.x = qxArr[i];
+      out.y = qyArr[i];
+      return;
+    }
+    const wi = pwArr[i] / (d2 * d2);
+    w[i] = wi;
+    wSum += wi;
+    pStarX += wi * pxArr[i];
+    pStarY += wi * pyArr[i];
+    qStarX += wi * qxArr[i];
+    qStarY += wi * qyArr[i];
+  }
+  if (wSum < 1e-12) {
+    out.x = vx;
+    out.y = vy;
+    return;
+  }
+  pStarX /= wSum;
+  pStarY /= wSum;
+  qStarX /= wSum;
+  qStarY /= wSum;
+
+  // Σ_pp entries
+  let a = 0, b = 0, c = 0; // [[a, b], [b, c]] (symmetric)
+  // Σ_pq entries (rows: pp, cols: q components)
+  let m00 = 0, m01 = 0, m10 = 0, m11 = 0; // [[Σ px*qx, Σ px*qy], [Σ py*qx, Σ py*qy]]
+
+  for (let i = 0; i < n; i++) {
+    const px = pxArr[i] - pStarX;
+    const py = pyArr[i] - pStarY;
+    const qx = qxArr[i] - qStarX;
+    const qy = qyArr[i] - qStarY;
+    const wi = w[i];
+    a += wi * px * px;
+    b += wi * px * py;
+    c += wi * py * py;
+    m00 += wi * px * qx;
+    m01 += wi * px * qy;
+    m10 += wi * py * qx;
+    m11 += wi * py * qy;
+  }
+
+  // Σ_pp⁻¹ = (1/det) [[c, -b], [-b, a]]
+  const det = a * c - b * b;
+  if (Math.abs(det) < 1e-12) {
+    out.x = qStarX;
+    out.y = qStarY;
+    return;
+  }
+  const invA = c / det;
+  const invB = -b / det;
+  const invC = a / det;
+
+  // M = Σ_pq · Σ_pp⁻¹
+  // Row-major multiply: M[row][col] = Σ_pq[row][k] * Σ_pp⁻¹[k][col]
+  const M00 = m00 * invA + m10 * invB; // Σ_pq row0 · Σ_pp⁻¹ col0
+  const M01 = m00 * invB + m10 * invC;
+  const M10 = m01 * invA + m11 * invB;
+  const M11 = m01 * invB + m11 * invC;
+
+  // f(v) = Mᵀ · (v − p*) + q*
+  //
+  // Note: the outer product construction above gives M such that
+  //   f(v) − q* = [ux, uy] · M
+  // i.e. v as a row vector times M. Equivalent to Mᵀ · v when v is a column.
+  const ux = vx - pStarX;
+  const uy = vy - pStarY;
+  out.x = ux * M00 + uy * M10 + qStarX;
+  out.y = ux * M01 + uy * M11 + qStarY;
+}
+
 // Scratch buffer reused across MLS calls — sized once, per warp pass
 let __wScratch = new Float64Array(0);
 
@@ -124,14 +226,17 @@ export function buildControlPairs(
     equalizeSquircleCorners: boolean;
     clampSpiralEye: boolean;
     bridgeTangent: boolean;
+    mode: "holistic" | "targeted";
   }
 ): ControlPair[] {
   const pairs: ControlPair[] = [];
+  const isTargeted = options.mode === "targeted";
 
-  // (1) Smart-grid arc points — the bulk holistic reshape.
-  if (smartGrid) {
+  // (1) Smart-grid preservation — ONLY in holistic mode. In targeted mode we
+  //     drop this so the TW enforcements aren't averaged into identity by
+  //     ~120 near-zero pairs.
+  if (!isTargeted && smartGrid) {
     for (const circle of smartGrid.circles) {
-      // Subsample so one circle doesn't dominate
       const samples = pickArcSamples(circle.arcPoints, 6);
       for (const p of samples) {
         const dx = p.x - circle.cx;
@@ -149,12 +254,15 @@ export function buildControlPairs(
     }
   }
 
-  // (2) TW semantic enforcements — higher weight so these dominate nearby pixels.
+  // (2) TW semantic enforcements — both modes; weights bumped in targeted
+  //     so the features visibly snap onto their ideal circles.
   if (twStructure) {
+    const wCorner = isTargeted ? 8.0 : 3.5;
+    const wEye = isTargeted ? 6.0 : 3.0;
+    const wBridge = isTargeted ? 5.0 : 2.2;
+
     if (options.equalizeSquircleCorners) {
       for (const corner of twStructure.squircleCorners) {
-        // Sample the ideal corner circle at 8 angles and pair each with the
-        // nearest point on the originally-fitted corner circle.
         const fittedCx = corner.cx;
         const fittedCy = corner.cy;
         const fittedR = corner.originalR;
@@ -168,21 +276,22 @@ export function buildControlPairs(
           pairs.push({
             source: { x: fittedCx + cos * fittedR, y: fittedCy + sin * fittedR },
             dest: { x: idealCx + cos * idealR, y: idealCy + sin * idealR },
-            weight: 3.5,
+            weight: wCorner,
           });
         }
       }
     }
     if (options.clampSpiralEye && twStructure.spiralEye && smartGrid) {
-      pairs.push(...pullArcsOntoCircle(smartGrid, twStructure.spiralEye, 3.0, 1.8));
+      pairs.push(...pullArcsOntoCircle(smartGrid, twStructure.spiralEye, wEye, 1.8));
     }
     if (options.bridgeTangent && twStructure.bridge && smartGrid) {
-      pairs.push(...pullArcsOntoCircle(smartGrid, twStructure.bridge, 2.2, 2.5));
+      pairs.push(...pullArcsOntoCircle(smartGrid, twStructure.bridge, wBridge, 2.5));
     }
   }
 
-  // (3) Boundary anchors — identity, keeps the frame locked.
-  const boundaryWeight = 0.6;
+  // (3) Boundary anchors — weaker in targeted so the frame can breathe while
+  //     features reshape, stronger in holistic to keep the whole thing stable.
+  const boundaryWeight = isTargeted ? 0.25 : 0.6;
   const bstep = Math.max(1, Math.floor(Math.min(width, height) / 6));
   for (let x = 0; x <= width; x += bstep) {
     pairs.push({ source: { x, y: 0 }, dest: { x, y: 0 }, weight: boundaryWeight });
@@ -262,10 +371,13 @@ export function warpImageMLS(
   sourceImageData: ImageData,
   pairs: ControlPair[],
   strength: number,
+  mode: "holistic" | "targeted" = "holistic",
   coarseStep: number = 6,
 ): ImageData {
   const { width, height, data: srcData } = sourceImageData;
   if (strength <= 0 || pairs.length < 3) return sourceImageData;
+
+  const mlsFn = mode === "targeted" ? mlsAffine : mlsSimilarity;
 
   const n = pairs.length;
   // Swap for inverse mapping: p = dest-space, q = source-space
@@ -293,7 +405,7 @@ export function warpImageMLS(
     for (let gx = 0; gx < gw; gx++) {
       const vx = gx * coarseStep;
       const vy = gy * coarseStep;
-      mlsSimilarity(vx, vy, pxArr, pyArr, qxArr, qyArr, pwArr, n, tmp);
+      mlsFn(vx, vy, pxArr, pyArr, qxArr, qyArr, pwArr, n, tmp);
       // Blend with identity based on strength
       const gi = gy * gw + gx;
       gridX[gi] = vx + strength * (tmp.x - vx);

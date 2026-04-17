@@ -4,12 +4,14 @@ import type { SmartGridResult } from "./smart-grid";
 
 export type ActiveTab = "fit" | "grid" | "deviation" | "tweaked";
 export type TweakStatus = "idle" | "analyzing" | "warping" | "ready" | "error";
+export type TweakMode = "holistic" | "targeted";
 
 export interface TweakOptions {
   equalizeSquircleCorners: boolean;
   clampSpiralEye: boolean;
   bridgeTangent: boolean;
   strength: number; // 0..100
+  mode: TweakMode;
 }
 
 export interface TweakDiff {
@@ -139,6 +141,7 @@ const defaultTweakOptions: TweakOptions = {
   clampSpiralEye: true,
   bridgeTangent: true,
   strength: 90,
+  mode: "holistic",
 };
 
 export const useLogoStore = create<LogoStore>((set) => ({

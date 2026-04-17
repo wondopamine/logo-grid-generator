@@ -266,6 +266,31 @@ export function TweakedPanel() {
         </Alert>
       )}
 
+      {/* Mode selector */}
+      <Card className="p-4 bg-neutral-900 border-neutral-800 space-y-3">
+        <h3 className="text-sm font-semibold text-neutral-100">Mode</h3>
+        <div className="grid grid-cols-2 gap-2">
+          <ModeButton
+            label="Holistic"
+            description="Smooth, preserves shape"
+            active={tweakOptions.mode === "holistic"}
+            onClick={() => updateTweakOptions({ mode: "holistic" })}
+          />
+          <ModeButton
+            label="Targeted"
+            description="Snaps features to grid"
+            active={tweakOptions.mode === "targeted"}
+            onClick={() => updateTweakOptions({ mode: "targeted" })}
+          />
+        </div>
+        <p className="text-xs text-neutral-400 leading-relaxed">
+          Holistic is a gentle cleanup — preserves the overall silhouette.
+          Targeted drops the preservation anchors and switches to an affine
+          warp so the corners, spiral eye, and t/w junction visibly snap onto
+          their ideal circles.
+        </p>
+      </Card>
+
       {/* Algorithm options */}
       <Card className="p-4 bg-neutral-900 border-neutral-800 space-y-3">
         <h3 className="text-sm font-semibold text-neutral-100">Enforcements</h3>
@@ -327,6 +352,28 @@ export function TweakedPanel() {
         </Card>
       )}
     </div>
+  );
+}
+
+function ModeButton({
+  label, description, active, onClick,
+}: {
+  label: string; description: string; active: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`text-left p-3 rounded-lg border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#141414] ${
+        active
+          ? "bg-cyan-500/15 border-cyan-500/60 text-neutral-50"
+          : "bg-neutral-800/40 border-neutral-700 text-neutral-300 hover:border-neutral-600"
+      }`}
+    >
+      <div className="text-sm font-semibold">{label}</div>
+      <div className="text-xs mt-0.5 opacity-80">{description}</div>
+    </button>
   );
 }
 

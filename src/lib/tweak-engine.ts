@@ -43,13 +43,14 @@ export async function runTweakPipeline(
       equalizeSquircleCorners: options.equalizeSquircleCorners,
       clampSpiralEye: options.clampSpiralEye,
       bridgeTangent: options.bridgeTangent,
+      mode: options.mode,
     }
   );
 
   callbacks.onWarpProgress?.(0.2);
   await yieldToBrowser();
 
-  const result = warpImageMLS(originalImageData, pairs, strength);
+  const result = warpImageMLS(originalImageData, pairs, strength, options.mode);
   callbacks.onWarpProgress?.(1);
   await yieldToBrowser();
 
