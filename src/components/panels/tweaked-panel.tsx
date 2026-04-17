@@ -33,6 +33,8 @@ export function TweakedPanel() {
     tweakedImageData,
     twStructure,
     setTWStructure,
+    tweakedShowGrid,
+    setTweakedShowGrid,
   } = useLogoStore();
 
   const handleGenerate = useCallback(async () => {
@@ -211,6 +213,18 @@ export function TweakedPanel() {
                 </Badge>
               </div>
             )}
+
+            <div className="flex items-center justify-between pt-1">
+              <Label htmlFor="tweaked-show-grid" className="text-xs text-neutral-300 cursor-pointer">
+                Show grid overlay
+              </Label>
+              <Switch
+                id="tweaked-show-grid"
+                checked={tweakedShowGrid}
+                onCheckedChange={setTweakedShowGrid}
+                aria-label="Show grid overlay on tweaked canvas"
+              />
+            </div>
 
             <div className="flex gap-2">
               <Button

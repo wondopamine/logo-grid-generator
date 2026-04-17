@@ -89,6 +89,10 @@ interface LogoStore {
   compareSplitX: number; // 0..1
   setCompareSplitX: (x: number) => void;
 
+  // Tweaked view: overlay the matching grid on top so the user can see contact
+  tweakedShowGrid: boolean;
+  setTweakedShowGrid: (v: boolean) => void;
+
   setImage: (url: string, element: HTMLImageElement) => void;
   setOriginalImageData: (data: ImageData) => void;
   setWarpedImageData: (data: ImageData | null) => void;
@@ -134,7 +138,7 @@ const defaultTweakOptions: TweakOptions = {
   equalizeSquircleCorners: true,
   clampSpiralEye: true,
   bridgeTangent: true,
-  strength: 70,
+  strength: 90,
 };
 
 export const useLogoStore = create<LogoStore>((set) => ({
@@ -174,6 +178,9 @@ export const useLogoStore = create<LogoStore>((set) => ({
   compareSplitX: 0.5,
   setCompareSplitX: (x) => set({ compareSplitX: Math.max(0, Math.min(1, x)) }),
 
+  tweakedShowGrid: true,
+  setTweakedShowGrid: (v) => set({ tweakedShowGrid: v }),
+
   setImage: (url, element) => set({ imageUrl: url, imageElement: element }),
   setOriginalImageData: (data) => set({ originalImageData: data }),
   setWarpedImageData: (data) => set({ warpedImageData: data }),
@@ -209,5 +216,6 @@ export const useLogoStore = create<LogoStore>((set) => ({
       tweakedGenerated: false,
       tweakDiff: null,
       compareSplitX: 0.5,
+      tweakedShowGrid: true,
     }),
 }));

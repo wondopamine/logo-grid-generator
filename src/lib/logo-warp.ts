@@ -161,48 +161,23 @@ export function buildControlPairs(
         const idealCx = corner.cx;
         const idealCy = corner.cy;
         const idealR = corner.r;
-        for (let a = 0; a < 8; a++) {
-          const theta = (a / 8) * Math.PI * 2;
+        for (let a = 0; a < 12; a++) {
+          const theta = (a / 12) * Math.PI * 2;
           const cos = Math.cos(theta);
           const sin = Math.sin(theta);
           pairs.push({
             source: { x: fittedCx + cos * fittedR, y: fittedCy + sin * fittedR },
             dest: { x: idealCx + cos * idealR, y: idealCy + sin * idealR },
-            weight: 2.0,
+            weight: 3.5,
           });
         }
       }
     }
-    if (options.clampSpiralEye && twStructure.spiralEye) {
-      const e = twStructure.spiralEye;
-      for (let a = 0; a < 12; a++) {
-        const theta = (a / 12) * Math.PI * 2;
-        const cos = Math.cos(theta);
-        const sin = Math.sin(theta);
-        // Same source/dest — this pins the detected eye in place as an anchor
-        const px = e.cx + cos * e.r;
-        const py = e.cy + sin * e.r;
-        pairs.push({
-          source: { x: px, y: py },
-          dest: { x: px, y: py },
-          weight: 1.5,
-        });
-      }
+    if (options.clampSpiralEye && twStructure.spiralEye && smartGrid) {
+      pairs.push(...pullArcsOntoCircle(smartGrid, twStructure.spiralEye, 3.0, 1.8));
     }
-    if (options.bridgeTangent && twStructure.bridge) {
-      const b = twStructure.bridge;
-      for (let a = 0; a < 6; a++) {
-        const theta = (a / 6) * Math.PI * 2;
-        const cos = Math.cos(theta);
-        const sin = Math.sin(theta);
-        const px = b.cx + cos * b.r;
-        const py = b.cy + sin * b.r;
-        pairs.push({
-          source: { x: px, y: py },
-          dest: { x: px, y: py },
-          weight: 1.3,
-        });
-      }
+    if (options.bridgeTangent && twStructure.bridge && smartGrid) {
+      pairs.push(...pullArcsOntoCircle(smartGrid, twStructure.bridge, 2.2, 2.5));
     }
   }
 
@@ -229,6 +204,48 @@ function pickArcSamples<T extends Point>(arcPoints: T[], maxCount: number): T[] 
     out.push(arcPoints[Math.round(i * step)]);
   }
   return out;
+}
+
+/**
+ * Pull existing logo edges (from smart-grid arc samples) onto a target ideal
+ * circle. Any smart-grid circle that overlaps the target region contributes its
+ * arc points, each paired with its projection onto the ideal circle.
+ *
+ * This is what makes "Clamp spiral eye" and "Apply tangent bridge" actually do
+ * something — previously they pinned identity points and had zero effect.
+ *
+ * `searchRadiusMult` — how far from the target center to look for contributing
+ * arcs (in multiples of target.r).
+ */
+function pullArcsOntoCircle(
+  smartGrid: SmartGridResult,
+  target: { cx: number; cy: number; r: number },
+  weight: number,
+  searchRadiusMult: number,
+): ControlPair[] {
+  const pairs: ControlPair[] = [];
+  const searchR = target.r * searchRadiusMult;
+  for (const sc of smartGrid.circles) {
+    // Skip the outer/bounding circles — we only want arcs near this target
+    const dCenter = Math.sqrt((sc.cx - target.cx) ** 2 + (sc.cy - target.cy) ** 2);
+    if (dCenter > searchR) continue;
+    if (sc.r > target.r * 3) continue; // too big to be a local feature
+    for (const p of pickArcSamples(sc.arcPoints, 8)) {
+      const dx = p.x - target.cx;
+      const dy = p.y - target.cy;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 1e-3) continue;
+      if (d > searchR) continue; // point too far from target
+      const projX = target.cx + (dx / d) * target.r;
+      const projY = target.cy + (dy / d) * target.r;
+      pairs.push({
+        source: { x: p.x, y: p.y },
+        dest: { x: projX, y: projY },
+        weight,
+      });
+    }
+  }
+  return pairs;
 }
 
 /**

@@ -58,6 +58,7 @@ export function LogoCanvas() {
       imageElement, gridData, smartGridResult, deviationMap,
       tweakedImageData, tweakedGenerated, compareSplitX, activeTab,
       twStructure, settings, animationProgress, isProcessing,
+      tweakedShowGrid,
     } = state;
 
     const dpr = window.devicePixelRatio || 1;
@@ -131,6 +132,27 @@ export function LogoCanvas() {
       tempCanvas.getContext("2d")!.putImageData(tweakedImageData, 0, 0);
       ctx.drawImage(tempCanvas, drawX, drawY, drawW, drawH);
       ctx.restore();
+
+      // Optional: overlay matching grid so the user can see how curves meet the circles
+      if (tweakedShowGrid) {
+        const centerX = drawX + drawW / 2;
+        const centerY = drawY + drawH / 2;
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.scale(scaleF, scaleF);
+        ctx.translate(-centerX, -centerY);
+
+        if (smartGridResult) {
+          const matching = [...smartGridResult.circles]
+            .sort((a, b) => b.explainedCount - a.explainedCount)
+            .slice(0, 6);
+          drawOverlayCircles(ctx, matching, drawX, drawY, scaleX, scaleY);
+        }
+        if (twStructure) {
+          drawOverlayTargets(ctx, twStructure, drawX, drawY, scaleX, scaleY);
+        }
+        ctx.restore();
+      }
     } else if (activeTab === "fit") {
       // --- Fit mode: logo + only the best-matching & helpful circles ---
       ctx.drawImage(imageElement, drawX, drawY, drawW, drawH);
@@ -305,6 +327,55 @@ export function LogoCanvas() {
       <CompareSlider containerRef={containerRef} />
     </div>
   );
+}
+
+function drawOverlayCircles(
+  ctx: CanvasRenderingContext2D,
+  circles: { cx: number; cy: number; r: number }[],
+  ox: number, oy: number, sx: number, sy: number,
+) {
+  const scale = Math.min(sx, sy);
+  for (const c of circles) {
+    const cx = ox + c.cx * sx;
+    const cy = oy + c.cy * sy;
+    const r = c.r * scale;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(74, 222, 128, 0.8)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    // Center crosshair
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, cy); ctx.lineTo(cx + 4, cy);
+    ctx.moveTo(cx, cy - 4); ctx.lineTo(cx, cy + 4);
+    ctx.strokeStyle = "rgba(74, 222, 128, 0.9)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function drawOverlayTargets(
+  ctx: CanvasRenderingContext2D,
+  twStructure: NonNullable<ReturnType<typeof useLogoStore.getState>["twStructure"]>,
+  ox: number, oy: number, sx: number, sy: number,
+) {
+  const scale = Math.min(sx, sy);
+  const color = "rgba(34, 211, 238, 0.9)";
+  const drawTarget = (cx: number, cy: number, r: number) => {
+    const px = ox + cx * sx;
+    const py = oy + cy * sy;
+    const rp = r * scale;
+    ctx.beginPath();
+    ctx.arc(px, py, rp, 0, Math.PI * 2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([5, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  };
+  for (const c of twStructure.squircleCorners) drawTarget(c.cx, c.cy, c.r);
+  if (twStructure.spiralEye) drawTarget(twStructure.spiralEye.cx, twStructure.spiralEye.cy, twStructure.spiralEye.r);
+  if (twStructure.bridge) drawTarget(twStructure.bridge.cx, twStructure.bridge.cy, twStructure.bridge.r);
 }
 
 function drawMatchingCircles(

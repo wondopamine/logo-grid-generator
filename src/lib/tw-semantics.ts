@@ -118,10 +118,13 @@ export function detectTWStructure(gridData: GridData, imageData: ImageData): TWS
       }
     }
 
-    // Enforce equal radius using median (robust against outliers)
+    // Enforce equal radius — use the mean, slightly biased toward the larger
+    // side so the result reads as a cleaner, more rounded squircle.
     if (cornerFits.length >= 2) {
-      const radii = cornerFits.map(c => c.r).sort((a, b) => a - b);
-      const rTarget = radii[Math.floor(radii.length / 2)];
+      const radii = cornerFits.map(c => c.r);
+      const mean = radii.reduce((s, r) => s + r, 0) / radii.length;
+      const max = Math.max(...radii);
+      const rTarget = mean * 0.6 + max * 0.4;
 
       // Reposition each center to the geometrically correct squircle corner position
       // For a squircle with corner radius r_target, corner center is at bounds_corner - r*(sign_x, sign_y)
