@@ -3,6 +3,7 @@
 import { useLogoStore, type ActiveTab } from "@/lib/use-logo-store";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { FitPanel } from "./panels/fit-panel";
 import { GridPanel } from "./panels/grid-panel";
 import { DeviationPanel } from "./panels/deviation-panel";
 import { TweakedPanel } from "./panels/tweaked-panel";
@@ -17,7 +18,14 @@ export function ModeTabs() {
       className="w-full h-full flex flex-col gap-0"
     >
       <div className="px-3 pt-3 pb-2 border-b border-neutral-800 bg-[#141414]">
-        <TabsList className="w-full bg-neutral-900 h-9 grid grid-cols-3 gap-1 p-1 rounded-lg">
+        <TabsList className="w-full bg-neutral-900 h-9 grid grid-cols-4 gap-1 p-1 rounded-lg">
+          <TabsTrigger
+            value="fit"
+            className="text-sm font-medium data-active:bg-neutral-800 data-active:text-neutral-100 text-neutral-300 focus-visible:ring-2 focus-visible:ring-cyan-400"
+            aria-label="Best-fit grid for this logo"
+          >
+            Fit
+          </TabsTrigger>
           <TabsTrigger
             value="grid"
             className="text-sm font-medium data-active:bg-neutral-800 data-active:text-neutral-100 text-neutral-300 focus-visible:ring-2 focus-visible:ring-cyan-400"
@@ -42,6 +50,11 @@ export function ModeTabs() {
         </TabsList>
       </div>
 
+      <TabsContent value="fit" className="flex-1 overflow-hidden m-0 data-[state=inactive]:hidden">
+        <ScrollArea className="h-full">
+          <FitPanel />
+        </ScrollArea>
+      </TabsContent>
       <TabsContent value="grid" className="flex-1 overflow-hidden m-0 data-[state=inactive]:hidden">
         <ScrollArea className="h-full">
           <GridPanel />

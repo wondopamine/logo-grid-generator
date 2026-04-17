@@ -1,139 +1,354 @@
-import type { FittedCircle, IdealCircle } from "./grid-generator";
+import type { SmartGridResult } from "./smart-grid";
+import type { TWStructure } from "./use-logo-store";
 
-interface DisplacementVector {
-  dx: number;
-  dy: number;
+interface Point {
+  x: number;
+  y: number;
+}
+
+export interface ControlPair {
+  /** Current position of the anchor in the source image. */
+  source: Point;
+  /** Target position in the refined output. */
+  dest: Point;
+  /** Relative importance (higher = stronger pull). */
   weight: number;
 }
 
-// Compute displacement field that morphs fitted circles toward ideal circles
-function computeDisplacements(
-  fitted: FittedCircle[],
-  ideal: IdealCircle[],
+/**
+ * MLS similarity transform (Schaefer 2006, eq. 5 for similarity).
+ * Given control point pairs (p_i → q_i) with weights w_i, returns a
+ * smoothly-varying 2D similarity transform f(v) evaluated at v.
+ *
+ * For each query point v, the weighted least-squares solution for
+ *   f(x) = M (x - p*) + q*,    M = [[a, -b], [b, a]]
+ * is:
+ *   a = (Σ w_i (p̂_i · q̂_i)) / μ_s
+ *   b = (Σ w_i (p̂_i × q̂_i)) / μ_s
+ *   μ_s = Σ w_i |p̂_i|²
+ *
+ * Weights decay as w_i(v) = pw_i / |p_i − v|^(2α), α = 2 here.
+ */
+function mlsSimilarity(
+  vx: number,
+  vy: number,
+  pxArr: Float64Array,
+  pyArr: Float64Array,
+  qxArr: Float64Array,
+  qyArr: Float64Array,
+  pwArr: Float64Array,
+  n: number,
+  out: { x: number; y: number }
+): void {
+  let wSum = 0;
+  let pStarX = 0, pStarY = 0, qStarX = 0, qStarY = 0;
+  const w = __wScratch;
+
+  for (let i = 0; i < n; i++) {
+    const dx = pxArr[i] - vx;
+    const dy = pyArr[i] - vy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < 1e-6) {
+      out.x = qxArr[i];
+      out.y = qyArr[i];
+      return;
+    }
+    // α = 2 → exponent 2α = 4 → weight ∝ 1 / d²·d² = 1/d⁴
+    const wi = pwArr[i] / (d2 * d2);
+    w[i] = wi;
+    wSum += wi;
+    pStarX += wi * pxArr[i];
+    pStarY += wi * pyArr[i];
+    qStarX += wi * qxArr[i];
+    qStarY += wi * qyArr[i];
+  }
+  if (wSum < 1e-12) {
+    out.x = vx;
+    out.y = vy;
+    return;
+  }
+  pStarX /= wSum;
+  pStarY /= wSum;
+  qStarX /= wSum;
+  qStarY /= wSum;
+
+  let muS = 0;
+  let sumA = 0;
+  let sumB = 0;
+  for (let i = 0; i < n; i++) {
+    const px = pxArr[i] - pStarX;
+    const py = pyArr[i] - pStarY;
+    const qx = qxArr[i] - qStarX;
+    const qy = qyArr[i] - qStarY;
+    const wi = w[i];
+    muS += wi * (px * px + py * py);
+    sumA += wi * (px * qx + py * qy);
+    sumB += wi * (px * qy - py * qx);
+  }
+  if (muS < 1e-12) {
+    out.x = qStarX;
+    out.y = qStarY;
+    return;
+  }
+
+  const a = sumA / muS;
+  const b = sumB / muS;
+  const ux = vx - pStarX;
+  const uy = vy - pStarY;
+  out.x = a * ux - b * uy + qStarX;
+  out.y = b * ux + a * uy + qStarY;
+}
+
+// Scratch buffer reused across MLS calls — sized once, per warp pass
+let __wScratch = new Float64Array(0);
+
+/**
+ * Build control-point pairs from Smart Grid circles + TW structure.
+ *
+ * For each Smart Grid circle, every arc point is paired with its nearest-point
+ * projection onto the circle. These are the bulk "keep-shape, pull-onto-ideal"
+ * anchors. When deviation is small the pair is near-identity (no movement).
+ *
+ * TW structure contributions are stronger — squircle corners, spiral eye,
+ * bridge — each sampled with higher weight so they dominate locally.
+ *
+ * Boundary anchors (image edges) are identity pairs with medium weight so the
+ * outer frame doesn't drift.
+ */
+export function buildControlPairs(
+  smartGrid: SmartGridResult | null,
+  twStructure: TWStructure | null,
   width: number,
   height: number,
-  influenceRadius: number
-): { dx: Float32Array; dy: Float32Array } {
-  const size = width * height;
-  const dx = new Float32Array(size);
-  const dy = new Float32Array(size);
-  const weights = new Float32Array(size);
+  options: {
+    equalizeSquircleCorners: boolean;
+    clampSpiralEye: boolean;
+    bridgeTangent: boolean;
+  }
+): ControlPair[] {
+  const pairs: ControlPair[] = [];
 
-  for (let ci = 0; ci < fitted.length && ci < ideal.length; ci++) {
-    const fc = fitted[ci];
-    const ic = ideal[ci];
-
-    // For each arc point, compute the displacement to move it onto the ideal circle
-    for (const p of fc.arcPoints) {
-      // Current position relative to fitted circle center
-      const distToFitted = Math.sqrt((p.x - fc.cx) ** 2 + (p.y - fc.cy) ** 2);
-      if (distToFitted < 0.1) continue;
-
-      // Direction from fitted center to point
-      const dirX = (p.x - fc.cx) / distToFitted;
-      const dirY = (p.y - fc.cy) / distToFitted;
-
-      // Where this point should be on the ideal circle
-      const idealX = ic.cx + dirX * ic.r;
-      const idealY = ic.cy + dirY * ic.r;
-
-      // Displacement at this point
-      const pdx = idealX - p.x;
-      const pdy = idealY - p.y;
-
-      // Spread displacement to nearby pixels using Gaussian falloff
-      const spreadR = influenceRadius;
-      const x0 = Math.max(0, Math.floor(p.x - spreadR));
-      const x1 = Math.min(width - 1, Math.ceil(p.x + spreadR));
-      const y0 = Math.max(0, Math.floor(p.y - spreadR));
-      const y1 = Math.min(height - 1, Math.ceil(p.y + spreadR));
-
-      for (let py = y0; py <= y1; py++) {
-        for (let px = x0; px <= x1; px++) {
-          const d = Math.sqrt((px - p.x) ** 2 + (py - p.y) ** 2);
-          if (d > spreadR) continue;
-          const w = Math.exp(-(d * d) / (2 * (spreadR / 3) ** 2));
-          const idx = py * width + px;
-          dx[idx] += pdx * w;
-          dy[idx] += pdy * w;
-          weights[idx] += w;
-        }
+  // (1) Smart-grid arc points — the bulk holistic reshape.
+  if (smartGrid) {
+    for (const circle of smartGrid.circles) {
+      // Subsample so one circle doesn't dominate
+      const samples = pickArcSamples(circle.arcPoints, 6);
+      for (const p of samples) {
+        const dx = p.x - circle.cx;
+        const dy = p.y - circle.cy;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < 1e-6) continue;
+        const idealX = circle.cx + (dx / d) * circle.r;
+        const idealY = circle.cy + (dy / d) * circle.r;
+        pairs.push({
+          source: { x: p.x, y: p.y },
+          dest: { x: idealX, y: idealY },
+          weight: 1.0,
+        });
       }
     }
   }
 
-  // Normalize by total weight
-  for (let i = 0; i < size; i++) {
-    if (weights[i] > 0) {
-      dx[i] /= weights[i];
-      dy[i] /= weights[i];
+  // (2) TW semantic enforcements — higher weight so these dominate nearby pixels.
+  if (twStructure) {
+    if (options.equalizeSquircleCorners) {
+      for (const corner of twStructure.squircleCorners) {
+        // Sample the ideal corner circle at 8 angles and pair each with the
+        // nearest point on the originally-fitted corner circle.
+        const fittedCx = corner.cx;
+        const fittedCy = corner.cy;
+        const fittedR = corner.originalR;
+        const idealCx = corner.cx;
+        const idealCy = corner.cy;
+        const idealR = corner.r;
+        for (let a = 0; a < 8; a++) {
+          const theta = (a / 8) * Math.PI * 2;
+          const cos = Math.cos(theta);
+          const sin = Math.sin(theta);
+          pairs.push({
+            source: { x: fittedCx + cos * fittedR, y: fittedCy + sin * fittedR },
+            dest: { x: idealCx + cos * idealR, y: idealCy + sin * idealR },
+            weight: 2.0,
+          });
+        }
+      }
+    }
+    if (options.clampSpiralEye && twStructure.spiralEye) {
+      const e = twStructure.spiralEye;
+      for (let a = 0; a < 12; a++) {
+        const theta = (a / 12) * Math.PI * 2;
+        const cos = Math.cos(theta);
+        const sin = Math.sin(theta);
+        // Same source/dest — this pins the detected eye in place as an anchor
+        const px = e.cx + cos * e.r;
+        const py = e.cy + sin * e.r;
+        pairs.push({
+          source: { x: px, y: py },
+          dest: { x: px, y: py },
+          weight: 1.5,
+        });
+      }
+    }
+    if (options.bridgeTangent && twStructure.bridge) {
+      const b = twStructure.bridge;
+      for (let a = 0; a < 6; a++) {
+        const theta = (a / 6) * Math.PI * 2;
+        const cos = Math.cos(theta);
+        const sin = Math.sin(theta);
+        const px = b.cx + cos * b.r;
+        const py = b.cy + sin * b.r;
+        pairs.push({
+          source: { x: px, y: py },
+          dest: { x: px, y: py },
+          weight: 1.3,
+        });
+      }
     }
   }
 
-  return { dx, dy };
-}
-
-// Apply displacement field to warp the image
-export function warpImage(
-  sourceImageData: ImageData,
-  fitted: FittedCircle[],
-  ideal: IdealCircle[],
-  strength: number // 0 to 1
-): ImageData {
-  const { width, height, data: srcData } = sourceImageData;
-
-  if (strength <= 0 || fitted.length === 0) {
-    return sourceImageData;
+  // (3) Boundary anchors — identity, keeps the frame locked.
+  const boundaryWeight = 0.6;
+  const bstep = Math.max(1, Math.floor(Math.min(width, height) / 6));
+  for (let x = 0; x <= width; x += bstep) {
+    pairs.push({ source: { x, y: 0 }, dest: { x, y: 0 }, weight: boundaryWeight });
+    pairs.push({ source: { x, y: height - 1 }, dest: { x, y: height - 1 }, weight: boundaryWeight });
+  }
+  for (let y = bstep; y < height - 1; y += bstep) {
+    pairs.push({ source: { x: 0, y }, dest: { x: 0, y }, weight: boundaryWeight });
+    pairs.push({ source: { x: width - 1, y }, dest: { x: width - 1, y }, weight: boundaryWeight });
   }
 
-  const logoSize = Math.max(width, height);
-  const influenceRadius = logoSize * 0.06;
+  return pairs;
+}
 
-  const { dx, dy } = computeDisplacements(fitted, ideal, width, height, influenceRadius);
+function pickArcSamples<T extends Point>(arcPoints: T[], maxCount: number): T[] {
+  if (arcPoints.length <= maxCount) return arcPoints;
+  const out: T[] = [];
+  const step = (arcPoints.length - 1) / (maxCount - 1);
+  for (let i = 0; i < maxCount; i++) {
+    out.push(arcPoints[Math.round(i * step)]);
+  }
+  return out;
+}
+
+/**
+ * Apply MLS similarity warp as an inverse mapping.
+ *
+ * Inverse warp: for each OUTPUT pixel v, compute where to sample in the SOURCE.
+ * So MLS gets destination-anchors as "p" and source-anchors as "q".
+ *
+ * MLS is evaluated on a coarse grid (every `coarseStep` pixels) and bilinearly
+ * interpolated per pixel — O(gridCells × controls) instead of O(pixels × controls),
+ * which is a 64× speedup at coarseStep=8.
+ */
+export function warpImageMLS(
+  sourceImageData: ImageData,
+  pairs: ControlPair[],
+  strength: number,
+  coarseStep: number = 6,
+): ImageData {
+  const { width, height, data: srcData } = sourceImageData;
+  if (strength <= 0 || pairs.length < 3) return sourceImageData;
+
+  const n = pairs.length;
+  // Swap for inverse mapping: p = dest-space, q = source-space
+  const pxArr = new Float64Array(n);
+  const pyArr = new Float64Array(n);
+  const qxArr = new Float64Array(n);
+  const qyArr = new Float64Array(n);
+  const pwArr = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    pxArr[i] = pairs[i].dest.x;
+    pyArr[i] = pairs[i].dest.y;
+    qxArr[i] = pairs[i].source.x;
+    qyArr[i] = pairs[i].source.y;
+    pwArr[i] = pairs[i].weight;
+  }
+  __wScratch = new Float64Array(n);
+
+  const gw = Math.ceil(width / coarseStep) + 1;
+  const gh = Math.ceil(height / coarseStep) + 1;
+  const gridX = new Float32Array(gw * gh);
+  const gridY = new Float32Array(gw * gh);
+
+  const tmp = { x: 0, y: 0 };
+  for (let gy = 0; gy < gh; gy++) {
+    for (let gx = 0; gx < gw; gx++) {
+      const vx = gx * coarseStep;
+      const vy = gy * coarseStep;
+      mlsSimilarity(vx, vy, pxArr, pyArr, qxArr, qyArr, pwArr, n, tmp);
+      // Blend with identity based on strength
+      const gi = gy * gw + gx;
+      gridX[gi] = vx + strength * (tmp.x - vx);
+      gridY[gi] = vy + strength * (tmp.y - vy);
+    }
+  }
 
   const output = new ImageData(width, height);
   const outData = output.data;
 
   for (let y = 0; y < height; y++) {
+    const gyf = y / coarseStep;
+    const gy0 = Math.floor(gyf);
+    const fy = gyf - gy0;
+    const gy1 = Math.min(gy0 + 1, gh - 1);
+
     for (let x = 0; x < width; x++) {
-      const idx = y * width + x;
+      const gxf = x / coarseStep;
+      const gx0 = Math.floor(gxf);
+      const fx = gxf - gx0;
+      const gx1 = Math.min(gx0 + 1, gw - 1);
 
-      // Source pixel position (reverse mapping: where in source does this output pixel come from)
-      const srcX = x - dx[idx] * strength;
-      const srcY = y - dy[idx] * strength;
+      const i00 = gy0 * gw + gx0;
+      const i10 = gy0 * gw + gx1;
+      const i01 = gy1 * gw + gx0;
+      const i11 = gy1 * gw + gx1;
 
-      // Bilinear interpolation
-      const x0 = Math.floor(srcX);
-      const y0 = Math.floor(srcY);
-      const x1 = x0 + 1;
-      const y1 = y0 + 1;
-      const fx = srcX - x0;
-      const fy = srcY - y0;
+      const w00 = (1 - fx) * (1 - fy);
+      const w10 = fx * (1 - fy);
+      const w01 = (1 - fx) * fy;
+      const w11 = fx * fy;
 
-      if (x0 >= 0 && x1 < width && y0 >= 0 && y1 < height) {
-        const i00 = (y0 * width + x0) * 4;
-        const i10 = (y0 * width + x1) * 4;
-        const i01 = (y1 * width + x0) * 4;
-        const i11 = (y1 * width + x1) * 4;
+      const srcX = gridX[i00] * w00 + gridX[i10] * w10 + gridX[i01] * w01 + gridX[i11] * w11;
+      const srcY = gridY[i00] * w00 + gridY[i10] * w10 + gridY[i01] * w01 + gridY[i11] * w11;
 
+      const outIdx = (y * width + x) * 4;
+
+      const sx0 = Math.floor(srcX);
+      const sy0 = Math.floor(srcY);
+      const sfx = srcX - sx0;
+      const sfy = srcY - sy0;
+      const sx1 = sx0 + 1;
+      const sy1 = sy0 + 1;
+
+      if (sx0 >= 0 && sx1 < width && sy0 >= 0 && sy1 < height) {
+        const i00s = (sy0 * width + sx0) * 4;
+        const i10s = (sy0 * width + sx1) * 4;
+        const i01s = (sy1 * width + sx0) * 4;
+        const i11s = (sy1 * width + sx1) * 4;
+        const sw00 = (1 - sfx) * (1 - sfy);
+        const sw10 = sfx * (1 - sfy);
+        const sw01 = (1 - sfx) * sfy;
+        const sw11 = sfx * sfy;
         for (let c = 0; c < 4; c++) {
-          const v00 = srcData[i00 + c];
-          const v10 = srcData[i10 + c];
-          const v01 = srcData[i01 + c];
-          const v11 = srcData[i11 + c];
-
-          outData[idx * 4 + c] = Math.round(
-            v00 * (1 - fx) * (1 - fy) +
-            v10 * fx * (1 - fy) +
-            v01 * (1 - fx) * fy +
-            v11 * fx * fy
+          outData[outIdx + c] = Math.round(
+            srcData[i00s + c] * sw00 +
+              srcData[i10s + c] * sw10 +
+              srcData[i01s + c] * sw01 +
+              srcData[i11s + c] * sw11,
           );
         }
+      } else if (srcX >= 0 && srcX < width && srcY >= 0 && srcY < height) {
+        const si = (Math.floor(srcY) * width + Math.floor(srcX)) * 4;
+        outData[outIdx] = srcData[si];
+        outData[outIdx + 1] = srcData[si + 1];
+        outData[outIdx + 2] = srcData[si + 2];
+        outData[outIdx + 3] = srcData[si + 3];
       } else {
-        // Edge: copy original
-        for (let c = 0; c < 4; c++) {
-          outData[idx * 4 + c] = srcData[idx * 4 + c];
-        }
+        outData[outIdx] = 0;
+        outData[outIdx + 1] = 0;
+        outData[outIdx + 2] = 0;
+        outData[outIdx + 3] = 0;
       }
     }
   }

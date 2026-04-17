@@ -131,6 +131,31 @@ export function LogoCanvas() {
       tempCanvas.getContext("2d")!.putImageData(tweakedImageData, 0, 0);
       ctx.drawImage(tempCanvas, drawX, drawY, drawW, drawH);
       ctx.restore();
+    } else if (activeTab === "fit") {
+      // --- Fit mode: logo + only the best-matching & helpful circles ---
+      ctx.drawImage(imageElement, drawX, drawY, drawW, drawH);
+
+      const centerX = drawX + drawW / 2;
+      const centerY = drawY + drawH / 2;
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.scale(scaleF, scaleF);
+      ctx.translate(-centerX, -centerY);
+
+      // Matching: top 6 smart circles, drawn solid green
+      if (smartGridResult) {
+        const matching = [...smartGridResult.circles]
+          .sort((a, b) => b.explainedCount - a.explainedCount)
+          .slice(0, 6);
+        drawMatchingCircles(ctx, matching, drawX, drawY, scaleX, scaleY, progress);
+      }
+
+      // Helpful: TW structure drawn dashed cyan
+      if (twStructure) {
+        drawHelpfulTargets(ctx, twStructure, drawX, drawY, scaleX, scaleY, progress);
+      }
+
+      ctx.restore();
     } else if (activeTab === "deviation") {
       // --- Deviation mode: dim logo, show red/green overlay ---
       ctx.save();
@@ -156,24 +181,55 @@ export function LogoCanvas() {
         ctx.restore();
       }
 
-      // Red/green overlay
-      if (deviationMap) {
+      // Pull-line overlay: from each edge point to its projection on the nearest grid circle
+      if (deviationMap && smartGridResult && smartGridResult.circles.length > 0) {
         const tol = settings.deviationTolerance;
-        const sampleStep = 2;
-        for (let py = 0; py < imageElement.height; py += sampleStep) {
-          for (let px = 0; px < imageElement.width; px += sampleStep) {
-            const idx = py * imageElement.width + px;
+        const sampleStep = 3;
+        const circles = smartGridResult.circles;
+        const imgW = imageElement.width;
+        const imgH = imageElement.height;
+        for (let py = 0; py < imgH; py += sampleStep) {
+          for (let px = 0; px < imgW; px += sampleStep) {
+            const idx = py * imgW + px;
             const dev = deviationMap[idx];
             if (dev < 0) continue;
-            const sx = drawX + px * scaleX;
-            const sy = drawY + py * scaleY;
-            if (dev <= tol) {
-              ctx.fillStyle = `rgba(34, 197, 94, ${0.7 - (dev / tol) * 0.35})`;
-            } else {
-              const intensity = Math.min(1, dev / (tol * 3));
-              ctx.fillStyle = `rgba(239, 68, 68, ${0.4 + intensity * 0.45})`;
+
+            // Find nearest circle and projection
+            let bestDist = Infinity;
+            let bestCx = 0, bestCy = 0, bestR = 0;
+            for (const c of circles) {
+              const d = Math.abs(Math.sqrt((px - c.cx) ** 2 + (py - c.cy) ** 2) - c.r);
+              if (d < bestDist) { bestDist = d; bestCx = c.cx; bestCy = c.cy; bestR = c.r; }
             }
-            ctx.fillRect(sx - 1, sy - 1, Math.max(2, 2 * scaleX), Math.max(2, 2 * scaleY));
+            const dx = px - bestCx;
+            const dy = py - bestCy;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            const projX = bestCx + (dx / dist) * bestR;
+            const projY = bestCy + (dy / dist) * bestR;
+
+            const sxFrom = drawX + px * scaleX;
+            const syFrom = drawY + py * scaleY;
+            const sxTo = drawX + projX * scaleX;
+            const syTo = drawY + projY * scaleY;
+
+            const aligned = dev <= tol;
+            if (aligned) {
+              // Short green dot — already aligned, no pull needed
+              ctx.fillStyle = `rgba(34, 197, 94, ${0.85 - (dev / tol) * 0.35})`;
+              ctx.fillRect(sxFrom - 1, syFrom - 1, 2, 2);
+            } else {
+              // Red line pulling toward the nearest ideal circle point
+              const intensity = Math.min(1, dev / (tol * 3));
+              ctx.strokeStyle = `rgba(239, 68, 68, ${0.5 + intensity * 0.4})`;
+              ctx.lineWidth = 1.1;
+              ctx.beginPath();
+              ctx.moveTo(sxFrom, syFrom);
+              ctx.lineTo(sxTo, syTo);
+              ctx.stroke();
+              // Tiny dot at the source
+              ctx.fillStyle = `rgba(239, 68, 68, ${0.85})`;
+              ctx.fillRect(sxFrom - 0.5, syFrom - 0.5, 1.5, 1.5);
+            }
           }
         }
       }
@@ -206,7 +262,7 @@ export function LogoCanvas() {
         if (settings.verticalRhythm) drawLines(ctx, gridData.verticalLines, drawX, drawY, scaleX, scaleY, settings, progress, "line");
         if (settings.smartGrid && smartGridResult) drawSmartCircles(ctx, smartGridResult.circles, drawX, drawY, scaleX, scaleY, settings, progress);
 
-        // TW semantic circles (drawn prominently)
+        // TW semantic circles (drawn prominently in tweaked mode only; fit mode has its own rendering)
         if (twStructure && activeTab === "tweaked") {
           drawTWStructure(ctx, twStructure, drawX, drawY, scaleX, scaleY, settings);
         }
@@ -249,6 +305,109 @@ export function LogoCanvas() {
       <CompareSlider containerRef={containerRef} />
     </div>
   );
+}
+
+function drawMatchingCircles(
+  ctx: CanvasRenderingContext2D,
+  circles: { cx: number; cy: number; r: number; arcPoints: { x: number; y: number }[] }[],
+  ox: number, oy: number, sx: number, sy: number,
+  progress: number,
+) {
+  const scale = Math.min(sx, sy);
+  circles.forEach((c, i) => {
+    const delay = i / Math.max(1, circles.length);
+    const p = Math.max(0, Math.min(1, (progress - delay * 0.3) / 0.7));
+    if (p <= 0) return;
+
+    const cx = ox + c.cx * sx;
+    const cy = oy + c.cy * sy;
+    const r = c.r * scale;
+
+    // Soft halo behind the circle
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(74, 222, 128, 0.18)";
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+
+    // Crisp full circle
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2 * p);
+    ctx.strokeStyle = "rgba(74, 222, 128, 0.75)";
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+
+    // Arc the logo actually traces (emphasized)
+    if (p > 0.3 && c.arcPoints.length > 1) {
+      const len = Math.floor(c.arcPoints.length * Math.min(1, (p - 0.3) / 0.7));
+      ctx.beginPath();
+      ctx.moveTo(ox + c.arcPoints[0].x * sx, oy + c.arcPoints[0].y * sy);
+      for (let j = 1; j < len; j++) {
+        ctx.lineTo(ox + c.arcPoints[j].x * sx, oy + c.arcPoints[j].y * sy);
+      }
+      ctx.strokeStyle = "rgba(134, 239, 172, 0.95)";
+      ctx.lineWidth = 2.8;
+      ctx.stroke();
+    }
+
+    // Center dot
+    if (p > 0.8) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(134, 239, 172, 1)";
+      ctx.fill();
+    }
+  });
+}
+
+function drawHelpfulTargets(
+  ctx: CanvasRenderingContext2D,
+  twStructure: NonNullable<ReturnType<typeof useLogoStore.getState>["twStructure"]>,
+  ox: number, oy: number, sx: number, sy: number,
+  progress: number,
+) {
+  const scale = Math.min(sx, sy);
+  const cyan = "rgba(34, 211, 238, 0.8)";
+  const p = Math.min(1, Math.max(0, (progress - 0.2) / 0.8));
+  if (p <= 0) return;
+
+  // Helper: dashed ideal circle with crosshair center
+  const drawIdeal = (cx: number, cy: number, r: number, label?: string) => {
+    const sxpx = ox + cx * sx;
+    const sypx = oy + cy * sy;
+    const rpx = r * scale;
+    ctx.beginPath();
+    ctx.arc(sxpx, sypx, rpx, 0, Math.PI * 2 * p);
+    ctx.strokeStyle = cyan;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([5, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Crosshair
+    ctx.beginPath();
+    ctx.moveTo(sxpx - 5, sypx);
+    ctx.lineTo(sxpx + 5, sypx);
+    ctx.moveTo(sxpx, sypx - 5);
+    ctx.lineTo(sxpx, sypx + 5);
+    ctx.strokeStyle = cyan;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    if (label) {
+      ctx.font = "11px var(--font-sans, system-ui)";
+      ctx.fillStyle = cyan;
+      ctx.fillText(label, sxpx + rpx * 0.7 + 4, sypx - 4);
+    }
+  };
+
+  for (const c of twStructure.squircleCorners) {
+    drawIdeal(c.cx, c.cy, c.r, c.quadrant);
+  }
+  if (twStructure.spiralEye) {
+    drawIdeal(twStructure.spiralEye.cx, twStructure.spiralEye.cy, twStructure.spiralEye.r, "eye");
+  }
+  if (twStructure.bridge) {
+    drawIdeal(twStructure.bridge.cx, twStructure.bridge.cy, twStructure.bridge.r, "bridge");
+  }
 }
 
 function drawTWStructure(

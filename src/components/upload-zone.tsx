@@ -6,6 +6,7 @@ import { useLogoStore } from "@/lib/use-logo-store";
 import { detectEdges } from "@/lib/edge-detection";
 import { generateGrid } from "@/lib/grid-generator";
 import { analyzeSmartGrid, computeDeviationMap } from "@/lib/smart-grid";
+import { detectTWStructure } from "@/lib/tw-semantics";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 
@@ -13,7 +14,7 @@ export function UploadZone() {
   const [isDragging, setIsDragging] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { imageUrl, setImage, setOriginalImageData, setGridData, setSmartGridResult, setDeviationMap, setProcessing, setAnimationProgress } =
+  const { imageUrl, setImage, setOriginalImageData, setGridData, setSmartGridResult, setDeviationMap, setTWStructure, setProcessing, setAnimationProgress } =
     useLogoStore();
 
   const processImage = useCallback(
@@ -51,9 +52,12 @@ export function UploadZone() {
         const smartResult = analyzeSmartGrid(edgeData);
         const devMap = computeDeviationMap(edgeData.edgePoints, smartResult.circles, img.width, img.height);
 
+        const twStructure = detectTWStructure(gridData, imageData);
+
         setGridData(gridData);
         setSmartGridResult(smartResult);
         setDeviationMap(devMap);
+        setTWStructure(twStructure);
         setProcessing(false);
 
         let start: number | null = null;
@@ -68,7 +72,7 @@ export function UploadZone() {
       };
       img.src = url;
     },
-    [setImage, setOriginalImageData, setGridData, setSmartGridResult, setDeviationMap, setProcessing, setAnimationProgress]
+    [setImage, setOriginalImageData, setGridData, setSmartGridResult, setDeviationMap, setTWStructure, setProcessing, setAnimationProgress]
   );
 
   const handleDrop = useCallback(

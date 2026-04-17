@@ -115,15 +115,26 @@ export function DeviationPanel() {
       {/* Legend */}
       <Alert className="bg-neutral-900 border-neutral-800">
         <Info className="w-4 h-4" />
-        <AlertTitle className="text-neutral-100 text-sm">Color legend</AlertTitle>
-        <AlertDescription className="text-neutral-300 text-xs space-y-1.5 mt-2">
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-sm bg-green-500" />
-            <span>Edge aligned with a grid circle</span>
+        <AlertTitle className="text-neutral-100 text-sm">How to read this</AlertTitle>
+        <AlertDescription className="text-neutral-300 text-xs space-y-2 mt-2">
+          <div className="flex items-start gap-2">
+            <span className="w-2 h-2 mt-1 rounded-sm bg-green-500 flex-shrink-0" />
+            <span>
+              <strong className="text-neutral-100">Green dot</strong> — the
+              edge is already aligned with a grid circle.
+            </span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-sm bg-red-500" />
-            <span>Edge deviates from the nearest circle</span>
+          <div className="flex items-start gap-2">
+            <span className="mt-1 flex-shrink-0">
+              <svg width="12" height="6" viewBox="0 0 12 6">
+                <line x1="0" y1="3" x2="12" y2="3" stroke="rgb(239,68,68)" strokeWidth="1.5" />
+              </svg>
+            </span>
+            <span>
+              <strong className="text-neutral-100">Red line</strong> — the
+              edge drifts off. Line length is the distance; direction points
+              at the nearest ideal-circle position.
+            </span>
           </div>
         </AlertDescription>
       </Alert>

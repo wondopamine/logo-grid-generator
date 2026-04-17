@@ -16,6 +16,7 @@ import { runTweakPipeline } from "@/lib/tweak-engine";
 export function TweakedPanel() {
   const {
     gridData,
+    smartGridResult,
     originalImageData,
     imageElement,
     tweakOptions,
@@ -44,6 +45,7 @@ export function TweakedPanel() {
       await runTweakPipeline(
         originalImageData,
         gridData,
+        smartGridResult,
         tweakOptions,
         {
           onAnalyzeDone: (structure) => {
@@ -69,6 +71,7 @@ export function TweakedPanel() {
   }, [
     originalImageData,
     gridData,
+    smartGridResult,
     tweakOptions,
     setTweakStatus,
     setTweakProgress,

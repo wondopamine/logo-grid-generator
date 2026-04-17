@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * This component renders just the handle + line.
  */
 export function CompareSlider({ containerRef }: { containerRef: React.RefObject<HTMLDivElement | null> }) {
-  const { compareSplitX, setCompareSplitX, tweakedGenerated } = useLogoStore();
+  const { compareSplitX, setCompareSplitX, tweakedGenerated, activeTab } = useLogoStore();
   const [dragging, setDragging] = useState(false);
   const handleRef = useRef<HTMLButtonElement>(null);
 
@@ -63,7 +63,7 @@ export function CompareSlider({ containerRef }: { containerRef: React.RefObject<
     [compareSplitX, setCompareSplitX]
   );
 
-  if (!tweakedGenerated) return null;
+  if (!tweakedGenerated || activeTab !== "tweaked") return null;
 
   const leftPercent = compareSplitX * 100;
 

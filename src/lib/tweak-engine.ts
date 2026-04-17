@@ -1,13 +1,16 @@
 /**
  * Tweak engine — orchestrates analyze → warp → compose for the Tweaked tab.
  *
- * Phase 3 uses the existing warpImage() with fitted/ideal circles.
- * Phase 4 will upgrade to warpWithTW() that uses the TW semantic layer.
+ * Uses MLS (Moving Least Squares) similarity warp driven by smart-grid arc
+ * samples + TW-semantic enforcements + boundary anchors. Produces a smooth,
+ * globally-coherent reshape rather than the per-arc Gaussian patches that
+ * caused the "forced/torn" look in earlier iterations.
  */
 
 import type { GridData } from "./grid-generator";
+import type { SmartGridResult } from "./smart-grid";
 import type { TweakOptions, TweakDiff, TWStructure } from "./use-logo-store";
-import { warpImage } from "./logo-warp";
+import { warpImageMLS, buildControlPairs } from "./logo-warp";
 import { detectTWStructure } from "./tw-semantics";
 
 export interface TweakCallbacks {
@@ -16,36 +19,40 @@ export interface TweakCallbacks {
   onComplete?: (result: ImageData, diff: TweakDiff) => void;
 }
 
-/**
- * Run the full pipeline. Uses requestAnimationFrame + requestIdleCallback
- * to keep the UI responsive during heavy computation.
- */
 export async function runTweakPipeline(
   originalImageData: ImageData,
   gridData: GridData,
+  smartGrid: SmartGridResult | null,
   options: TweakOptions,
   callbacks: TweakCallbacks = {}
 ): Promise<ImageData> {
-  // Phase 1: detect TW structure
   await yieldToBrowser();
   const structure = detectTWStructure(gridData, originalImageData);
   callbacks.onAnalyzeDone?.(structure);
   await yieldToBrowser();
 
-  // Phase 2: warp — reuse the existing warp engine.
-  // Future (Phase 4): swap for warpWithTW that uses structure-specific displacements.
   callbacks.onWarpProgress?.(0);
   const strength = options.strength / 100;
-  const result = warpImage(
-    originalImageData,
-    gridData.fittedCircles,
-    gridData.idealCircles,
-    strength
+
+  const pairs = buildControlPairs(
+    smartGrid,
+    structure,
+    originalImageData.width,
+    originalImageData.height,
+    {
+      equalizeSquircleCorners: options.equalizeSquircleCorners,
+      clampSpiralEye: options.clampSpiralEye,
+      bridgeTangent: options.bridgeTangent,
+    }
   );
+
+  callbacks.onWarpProgress?.(0.2);
+  await yieldToBrowser();
+
+  const result = warpImageMLS(originalImageData, pairs, strength);
   callbacks.onWarpProgress?.(1);
   await yieldToBrowser();
 
-  // Phase 3: compute diff summary
   const diff = computeTweakDiff(originalImageData, result, structure, options);
 
   callbacks.onComplete?.(result, diff);
@@ -68,11 +75,10 @@ function computeTweakDiff(
   structure: TWStructure,
   options: TweakOptions
 ): TweakDiff {
-  // RMS delta across all pixels (quick perceptual proxy)
   const n = Math.min(original.data.length, tweaked.data.length);
   let sq = 0;
   let count = 0;
-  const stride = 4 * 8; // sample every 8th pixel to keep this fast
+  const stride = 4 * 8;
   for (let i = 0; i < n; i += stride) {
     const dr = original.data[i] - tweaked.data[i];
     const dg = original.data[i + 1] - tweaked.data[i + 1];

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { GridData } from "./grid-generator";
 import type { SmartGridResult } from "./smart-grid";
 
-export type ActiveTab = "grid" | "deviation" | "tweaked";
+export type ActiveTab = "fit" | "grid" | "deviation" | "tweaked";
 export type TweakStatus = "idle" | "analyzing" | "warping" | "ready" | "error";
 
 export interface TweakOptions {
@@ -152,7 +152,7 @@ export const useLogoStore = create<LogoStore>((set) => ({
   settings: defaultSettings,
   showAnalysis: false,
 
-  activeTab: "grid",
+  activeTab: "fit",
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   tweakOptions: defaultTweakOptions,
@@ -202,7 +202,7 @@ export const useLogoStore = create<LogoStore>((set) => ({
       animationProgress: 0,
       settings: defaultSettings,
       showAnalysis: false,
-      activeTab: "grid",
+      activeTab: "fit",
       tweakOptions: defaultTweakOptions,
       tweakStatus: "idle",
       tweakProgress: 0,
