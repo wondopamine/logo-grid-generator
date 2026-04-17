@@ -3,6 +3,7 @@
 import { useRef, useEffect, useCallback } from "react";
 import { useLogoStore } from "@/lib/use-logo-store";
 import type { GridData, FittedCircle, IdealCircle, GridLine, GridRect } from "@/lib/grid-generator";
+import { CompareSlider } from "./compare-slider";
 
 const GRID_COLORS: Record<string, { fitted: string; ideal: string; line: string; rect: string; construction: string }> = {
   cyan: {
@@ -53,7 +54,11 @@ export function LogoCanvas() {
     if (!ctx) return;
 
     const state = useLogoStore.getState();
-    const { imageElement, warpedImageData, gridData, smartGridResult, deviationMap, settings, animationProgress, isProcessing } = state;
+    const {
+      imageElement, gridData, smartGridResult, deviationMap,
+      tweakedImageData, tweakedGenerated, compareSplitX, activeTab,
+      twStructure, settings, animationProgress, isProcessing,
+    } = state;
 
     const dpr = window.devicePixelRatio || 1;
     const rect = container.getBoundingClientRect();
@@ -99,133 +104,114 @@ export function LogoCanvas() {
       }
     }
 
-    // Draw logo (warped or original)
-    if (settings.showWarped && warpedImageData && settings.warpStrength > 0) {
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = warpedImageData.width;
-      tempCanvas.height = warpedImageData.height;
-      tempCanvas.getContext("2d")!.putImageData(warpedImageData, 0, 0);
-      ctx.drawImage(tempCanvas, drawX, drawY, drawW, drawH);
-    } else {
+    const scaleX = drawW / imageElement.width;
+    const scaleY = drawH / imageElement.height;
+    const scaleF = settings.scale / 100;
+    const progress = Math.min(1, animationProgress);
+
+    // ==========================================================
+    // MODE-AWARE RENDERING
+    // ==========================================================
+
+    if (activeTab === "tweaked" && tweakedGenerated && tweakedImageData) {
+      // --- Split view: original (left) | tweaked (right) ---
+      const splitPx = drawX + drawW * compareSplitX;
+
+      // Draw original on full area first
       ctx.drawImage(imageElement, drawX, drawY, drawW, drawH);
-    }
 
-    // Grid overlay
-    if (gridData && animationProgress > 0) {
-      const scaleX = drawW / imageElement.width;
-      const scaleY = drawH / imageElement.height;
-      const scaleF = settings.scale / 100;
-      const progress = Math.min(1, animationProgress);
-
-      const centerX = drawX + drawW / 2;
-      const centerY = drawY + drawH / 2;
+      // Clip right side and draw tweaked
       ctx.save();
-      ctx.translate(centerX, centerY);
-      ctx.scale(scaleF, scaleF);
-      ctx.translate(-centerX, -centerY);
-
-      // Fitted circles (trace actual curves)
-      if (settings.fittedCircles) {
-        drawFittedCircles(ctx, gridData.fittedCircles, drawX, drawY, scaleX, scaleY, settings, progress);
-      }
-
-      // Ideal circles (Fibonacci-snapped)
-      if (settings.idealCircles) {
-        drawIdealCircles(ctx, gridData.idealCircles, drawX, drawY, scaleX, scaleY, settings, progress);
-      }
-
-      // Golden ratio circles (Fibonacci from center)
-      if (settings.goldenCircles) {
-        drawSimpleCircles(ctx, gridData.goldenCircles, drawX, drawY, scaleX, scaleY, settings, progress);
-      }
-
-      // Concentric circles
-      if (settings.concentricCircles) {
-        drawSimpleCircles(ctx, gridData.concentricCircles, drawX, drawY, scaleX, scaleY, settings, progress);
-      }
-
-      // Bounding / Inscribed circles
-      if (settings.boundingCircles) {
-        drawSimpleCircles(ctx, gridData.boundingCircles, drawX, drawY, scaleX, scaleY, settings, progress);
-      }
-
-      // Osculating circles
-      if (settings.osculatingCircles) {
-        drawSimpleCircles(ctx, gridData.osculatingCircles, drawX, drawY, scaleX, scaleY, settings, progress);
-      }
-
-      // Corner radius circles
-      if (settings.cornerRadiusCircles) {
-        drawSimpleCircles(ctx, gridData.cornerRadiusCircles, drawX, drawY, scaleX, scaleY, settings, progress);
-      }
-
-      // Tangent circles
-      if (settings.tangentCircles) {
-        drawSimpleCircles(ctx, gridData.tangentCircles, drawX, drawY, scaleX, scaleY, settings, progress);
-      }
-
-      // Keypoint circles
-      if (settings.keypointCircles) {
-        drawSimpleCircles(ctx, gridData.keypointCircles, drawX, drawY, scaleX, scaleY, settings, progress);
-      }
-
-      // Construction lines between circle centers
-      if (settings.constructionLines) {
-        drawLines(ctx, gridData.constructionLines, drawX, drawY, scaleX, scaleY, settings, progress, "construction");
-      }
-
-      // Rectangles
-      if (settings.goldenRect) {
-        drawRects(ctx, gridData.goldenRects, drawX, drawY, scaleX, scaleY, settings, progress);
-      }
-
-      // Lines
-      if (settings.ruleOfThirds) {
-        drawLines(ctx, gridData.thirdLines, drawX, drawY, scaleX, scaleY, settings, progress, "line");
-      }
-      if (settings.diagonals) {
-        drawLines(ctx, gridData.diagonalLines, drawX, drawY, scaleX, scaleY, settings, progress, "line");
-      }
-      if (settings.baseline) {
-        drawLines(ctx, gridData.baselineLines, drawX, drawY, scaleX, scaleY, settings, progress, "line");
-      }
-      if (settings.verticalRhythm) {
-        drawLines(ctx, gridData.verticalLines, drawX, drawY, scaleX, scaleY, settings, progress, "line");
-      }
-
-      // Smart grid circles
-      if (settings.smartGrid && smartGridResult) {
-        drawSmartCircles(ctx, smartGridResult.circles, drawX, drawY, scaleX, scaleY, settings, progress);
-      }
-
+      ctx.beginPath();
+      ctx.rect(splitPx, drawY, drawW - (splitPx - drawX), drawH);
+      ctx.clip();
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width = tweakedImageData.width;
+      tempCanvas.height = tweakedImageData.height;
+      tempCanvas.getContext("2d")!.putImageData(tweakedImageData, 0, 0);
+      ctx.drawImage(tempCanvas, drawX, drawY, drawW, drawH);
       ctx.restore();
-    }
+    } else if (activeTab === "deviation") {
+      // --- Deviation mode: dim logo, show red/green overlay ---
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.drawImage(imageElement, drawX, drawY, drawW, drawH);
+      ctx.restore();
 
-    // Deviation overlay
-    if (settings.deviationMode && deviationMap && imageElement) {
-      const scaleX = drawW / imageElement.width;
-      const scaleY = drawH / imageElement.height;
-      const tol = settings.deviationTolerance;
-
-      for (let py = 0; py < imageElement.height; py += 2) {
-        for (let px = 0; px < imageElement.width; px += 2) {
-          const idx = py * imageElement.width + px;
-          const dev = deviationMap[idx];
-          if (dev < 0) continue; // not an edge pixel
-
-          const sx = drawX + px * scaleX;
-          const sy = drawY + py * scaleY;
-
-          if (dev <= tol) {
-            // Green: edge aligns with a circle
-            ctx.fillStyle = `rgba(34, 197, 94, ${0.6 - (dev / tol) * 0.4})`;
-          } else {
-            // Red: edge deviates
-            const intensity = Math.min(1, dev / (tol * 3));
-            ctx.fillStyle = `rgba(239, 68, 68, ${0.3 + intensity * 0.4})`;
-          }
-          ctx.fillRect(sx - 1, sy - 1, 3 * scaleX, 3 * scaleY);
+      // Faint smart-grid circle outlines as reference
+      if (smartGridResult && gridData) {
+        const centerX = drawX + drawW / 2;
+        const centerY = drawY + drawH / 2;
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.scale(scaleF, scaleF);
+        ctx.translate(-centerX, -centerY);
+        for (const c of smartGridResult.circles) {
+          ctx.beginPath();
+          ctx.arc(drawX + c.cx * scaleX, drawY + c.cy * scaleY, c.r * Math.min(scaleX, scaleY), 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
         }
+        ctx.restore();
+      }
+
+      // Red/green overlay
+      if (deviationMap) {
+        const tol = settings.deviationTolerance;
+        const sampleStep = 2;
+        for (let py = 0; py < imageElement.height; py += sampleStep) {
+          for (let px = 0; px < imageElement.width; px += sampleStep) {
+            const idx = py * imageElement.width + px;
+            const dev = deviationMap[idx];
+            if (dev < 0) continue;
+            const sx = drawX + px * scaleX;
+            const sy = drawY + py * scaleY;
+            if (dev <= tol) {
+              ctx.fillStyle = `rgba(34, 197, 94, ${0.7 - (dev / tol) * 0.35})`;
+            } else {
+              const intensity = Math.min(1, dev / (tol * 3));
+              ctx.fillStyle = `rgba(239, 68, 68, ${0.4 + intensity * 0.45})`;
+            }
+            ctx.fillRect(sx - 1, sy - 1, Math.max(2, 2 * scaleX), Math.max(2, 2 * scaleY));
+          }
+        }
+      }
+    } else {
+      // --- Grid mode (default) or tweaked-not-yet-generated: full logo + grid overlay ---
+      ctx.drawImage(imageElement, drawX, drawY, drawW, drawH);
+
+      if (gridData && progress > 0) {
+        const centerX = drawX + drawW / 2;
+        const centerY = drawY + drawH / 2;
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.scale(scaleF, scaleF);
+        ctx.translate(-centerX, -centerY);
+
+        if (settings.fittedCircles) drawFittedCircles(ctx, gridData.fittedCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+        if (settings.idealCircles) drawIdealCircles(ctx, gridData.idealCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+        if (settings.goldenCircles) drawSimpleCircles(ctx, gridData.goldenCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+        if (settings.concentricCircles) drawSimpleCircles(ctx, gridData.concentricCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+        if (settings.boundingCircles) drawSimpleCircles(ctx, gridData.boundingCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+        if (settings.osculatingCircles) drawSimpleCircles(ctx, gridData.osculatingCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+        if (settings.cornerRadiusCircles) drawSimpleCircles(ctx, gridData.cornerRadiusCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+        if (settings.tangentCircles) drawSimpleCircles(ctx, gridData.tangentCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+        if (settings.keypointCircles) drawSimpleCircles(ctx, gridData.keypointCircles, drawX, drawY, scaleX, scaleY, settings, progress);
+        if (settings.constructionLines) drawLines(ctx, gridData.constructionLines, drawX, drawY, scaleX, scaleY, settings, progress, "construction");
+        if (settings.goldenRect) drawRects(ctx, gridData.goldenRects, drawX, drawY, scaleX, scaleY, settings, progress);
+        if (settings.ruleOfThirds) drawLines(ctx, gridData.thirdLines, drawX, drawY, scaleX, scaleY, settings, progress, "line");
+        if (settings.diagonals) drawLines(ctx, gridData.diagonalLines, drawX, drawY, scaleX, scaleY, settings, progress, "line");
+        if (settings.baseline) drawLines(ctx, gridData.baselineLines, drawX, drawY, scaleX, scaleY, settings, progress, "line");
+        if (settings.verticalRhythm) drawLines(ctx, gridData.verticalLines, drawX, drawY, scaleX, scaleY, settings, progress, "line");
+        if (settings.smartGrid && smartGridResult) drawSmartCircles(ctx, smartGridResult.circles, drawX, drawY, scaleX, scaleY, settings, progress);
+
+        // TW semantic circles (drawn prominently)
+        if (twStructure && activeTab === "tweaked") {
+          drawTWStructure(ctx, twStructure, drawX, drawY, scaleX, scaleY, settings);
+        }
+
+        ctx.restore();
       }
     }
 
@@ -254,9 +240,61 @@ export function LogoCanvas() {
 
   return (
     <div ref={containerRef} className="absolute inset-0 overflow-hidden">
-      <canvas ref={canvasRef} className="absolute inset-0" />
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0"
+        role="img"
+        aria-label="Logo with grid overlay"
+      />
+      <CompareSlider containerRef={containerRef} />
     </div>
   );
+}
+
+function drawTWStructure(
+  ctx: CanvasRenderingContext2D,
+  twStructure: NonNullable<ReturnType<typeof useLogoStore.getState>["twStructure"]>,
+  ox: number, oy: number, sx: number, sy: number,
+  settings: { opacity: number; strokeWidth: number; gridColor: string }
+) {
+  const scale = Math.min(sx, sy);
+  const prominent = getColor(settings.gridColor, "fitted", Math.min(100, settings.opacity * 1.3));
+
+  // Squircle corners (double-stroke for equalized)
+  for (const corner of twStructure.squircleCorners) {
+    ctx.beginPath();
+    ctx.arc(ox + corner.cx * sx, oy + corner.cy * sy, corner.r * scale, 0, Math.PI * 2);
+    ctx.strokeStyle = prominent;
+    ctx.lineWidth = settings.strokeWidth * 1.5;
+    ctx.stroke();
+    // Center dot
+    ctx.beginPath();
+    ctx.arc(ox + corner.cx * sx, oy + corner.cy * sy, 3, 0, Math.PI * 2);
+    ctx.fillStyle = prominent;
+    ctx.fill();
+  }
+
+  // Spiral eye (dashed)
+  if (twStructure.spiralEye) {
+    const e = twStructure.spiralEye;
+    ctx.beginPath();
+    ctx.arc(ox + e.cx * sx, oy + e.cy * sy, e.r * scale, 0, Math.PI * 2);
+    ctx.strokeStyle = prominent;
+    ctx.lineWidth = settings.strokeWidth * 1.2;
+    ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Bridge tangent
+  if (twStructure.bridge) {
+    const b = twStructure.bridge;
+    ctx.beginPath();
+    ctx.arc(ox + b.cx * sx, oy + b.cy * sy, b.r * scale, 0, Math.PI * 2);
+    ctx.strokeStyle = prominent;
+    ctx.lineWidth = settings.strokeWidth;
+    ctx.stroke();
+  }
 }
 
 function drawSmartCircles(
