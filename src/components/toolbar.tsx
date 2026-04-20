@@ -97,7 +97,10 @@ export function Toolbar() {
     [imageElement, gridData, settings, tweakedImageData]
   );
 
-  const modeLabel = activeTab === "grid" ? "Grid" : activeTab === "deviation" ? "Deviations" : "Tweaked";
+  const modeLabel =
+    activeTab === "fit" ? "Fit" :
+    activeTab === "grid" ? "Grid" :
+    activeTab === "deviation" ? "Deviations" : "Tweaked";
 
   return (
     <header className="h-14 bg-[#0a0a0a] border-b border-neutral-800 flex items-center px-4 gap-3 shrink-0">
