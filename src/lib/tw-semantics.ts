@@ -64,8 +64,14 @@ function kasaFit(points: Point[]): { cx: number; cy: number; r: number; error: n
  * Detect the semantic structure of a TW-style logo from the computed grid data
  * and raw image.
  *
- * Uses fittedCircles as the pool of available arc evidence — we pick the ones
- * that look like squircle corners, spiral centers, and junction bridges.
+ * Reuses grid-generator's `cornerRadiusCircles` (which already fits the outer
+ * contour's corner regions via Kasa + enforces equal radius across found
+ * corners) and its spiral-eye output. The previous implementation re-derived
+ * corners from `fittedCircles`, which are letterform-curve fits — wrong pool
+ * for the squircle boundary, so it found nothing for TW-style logos.
+ *
+ * Bridge detection still uses fittedCircles because the t/w junction IS a
+ * letterform feature, so fittedCircles is the right pool there.
  */
 export function detectTWStructure(gridData: GridData, imageData: ImageData): TWStructure {
   const structure: TWStructure = {
@@ -75,90 +81,54 @@ export function detectTWStructure(gridData: GridData, imageData: ImageData): TWS
     outerSquircle: null,
   };
 
-  const logoSize = Math.max(imageData.width, imageData.height);
-
-  // (a) Four squircle corners — find 4 fitted circles near the bounds corners
   const bounds = computeAlphaBounds(imageData);
+
+  // (a) Squircle corners — reuse grid-generator's equalized corner-radius
+  //     circles. Derive quadrant from position relative to bounds center.
   if (bounds) {
-    const margin = Math.min(bounds.width, bounds.height) * 0.35;
-    const cornerTargets = [
-      { quadrant: "NW" as const, cx: bounds.x, cy: bounds.y },
-      { quadrant: "NE" as const, cx: bounds.x + bounds.width, cy: bounds.y },
-      { quadrant: "SE" as const, cx: bounds.x + bounds.width, cy: bounds.y + bounds.height },
-      { quadrant: "SW" as const, cx: bounds.x, cy: bounds.y + bounds.height },
-    ];
+    const midX = bounds.x + bounds.width / 2;
+    const midY = bounds.y + bounds.height / 2;
 
-    const cornerFits: Array<{ quadrant: "NW" | "NE" | "SE" | "SW"; cx: number; cy: number; r: number; originalR: number }> = [];
+    const cornerCircles = gridData.cornerRadiusCircles.filter(c => c.label !== "Spiral eye");
 
-    for (const target of cornerTargets) {
-      // Find fitted circles whose center is within `margin` of this bounds corner
-      // and whose arc points fall mostly in that corner's region
-      let bestCircle: typeof gridData.fittedCircles[number] | null = null;
-      let bestDist = Infinity;
+    for (const c of cornerCircles) {
+      const west = c.cx < midX;
+      const north = c.cy < midY;
+      const quadrant: "NW" | "NE" | "SE" | "SW" =
+        west && north ? "NW" :
+        !west && north ? "NE" :
+        !west && !north ? "SE" : "SW";
 
-      for (const c of gridData.fittedCircles) {
-        const d = Math.sqrt((c.cx - target.cx) ** 2 + (c.cy - target.cy) ** 2);
-        if (d < margin && d < bestDist) {
-          // Require radius to be plausible for a squircle corner (roughly 5-25% of logo)
-          if (c.r > logoSize * 0.04 && c.r < logoSize * 0.3) {
-            bestDist = d;
-            bestCircle = c;
-          }
-        }
-      }
-
-      if (bestCircle) {
-        cornerFits.push({
-          quadrant: target.quadrant,
-          cx: bestCircle.cx,
-          cy: bestCircle.cy,
-          r: bestCircle.r,
-          originalR: bestCircle.r,
-        });
-      }
+      structure.squircleCorners.push({
+        quadrant,
+        cx: c.cx,
+        cy: c.cy,
+        r: c.r,
+        originalR: c.r,
+      });
     }
 
-    // Enforce equal radius — use the mean, slightly biased toward the larger
-    // side so the result reads as a cleaner, more rounded squircle.
-    if (cornerFits.length >= 2) {
-      const radii = cornerFits.map(c => c.r);
-      const mean = radii.reduce((s, r) => s + r, 0) / radii.length;
-      const max = Math.max(...radii);
-      const rTarget = mean * 0.6 + max * 0.4;
-
-      // Reposition each center to the geometrically correct squircle corner position
-      // For a squircle with corner radius r_target, corner center is at bounds_corner - r*(sign_x, sign_y)
-      for (const corner of cornerFits) {
-        const signX = corner.quadrant === "NW" || corner.quadrant === "SW" ? 1 : -1;
-        const signY = corner.quadrant === "NW" || corner.quadrant === "NE" ? 1 : -1;
-        const boundsCornerX = corner.quadrant === "NW" || corner.quadrant === "SW" ? bounds.x : bounds.x + bounds.width;
-        const boundsCornerY = corner.quadrant === "NW" || corner.quadrant === "NE" ? bounds.y : bounds.y + bounds.height;
-
-        structure.squircleCorners.push({
-          quadrant: corner.quadrant,
-          cx: boundsCornerX + signX * rTarget,
-          cy: boundsCornerY + signY * rTarget,
-          r: rTarget,
-          originalR: corner.originalR,
-        });
-      }
-
-      // Outer squircle "virtual" bounding circle
+    if (structure.squircleCorners.length >= 2) {
       structure.outerSquircle = {
-        cx: bounds.x + bounds.width / 2,
-        cy: bounds.y + bounds.height / 2,
+        cx: midX,
+        cy: midY,
         r: Math.max(bounds.width, bounds.height) / 2,
       };
     }
   }
 
-  // (b) Spiral eye — use distance transform peak inside the letterform
-  const eye = findSpiralEye(imageData, bounds);
-  if (eye) {
-    structure.spiralEye = eye;
+  // (b) Spiral eye — prefer grid-generator's spiral-eye circle (labeled on
+  //     cornerRadiusCircles). Fall back to the distance-transform search if
+  //     grid-generator didn't emit one.
+  const preSpiral = gridData.cornerRadiusCircles.find(c => c.label === "Spiral eye");
+  if (preSpiral) {
+    structure.spiralEye = { cx: preSpiral.cx, cy: preSpiral.cy, r: preSpiral.r };
+  } else {
+    const eye = findSpiralEye(imageData, bounds);
+    if (eye) structure.spiralEye = eye;
   }
 
-  // (c) Tangent bridge — find the closest pair of arc endpoints in the lower 35% of bounds
+  // (c) Tangent bridge — fittedCircles is the right pool here (letterform arcs).
   if (bounds && gridData.fittedCircles.length >= 2) {
     structure.bridge = findBridge(gridData.fittedCircles, bounds);
   }
