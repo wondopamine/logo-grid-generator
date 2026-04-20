@@ -14,6 +14,7 @@ import { useCallback, useRef } from "react";
 import { detectEdges } from "@/lib/edge-detection";
 import { generateGrid } from "@/lib/grid-generator";
 import { analyzeSmartGrid, computeDeviationMap } from "@/lib/smart-grid";
+import { detectTWStructure } from "@/lib/tw-semantics";
 import { getCanvasForExport } from "./logo-canvas";
 
 export function Toolbar() {
@@ -31,6 +32,7 @@ export function Toolbar() {
     setGridData,
     setSmartGridResult,
     setDeviationMap,
+    setTWStructure,
     setProcessing,
     setAnimationProgress,
     setShowAnalysis,
@@ -64,10 +66,12 @@ export function Toolbar() {
         const grid = generateGrid(edgeData, img.width, img.height, imageData);
         const smartResult = analyzeSmartGrid(edgeData);
         const devMap = computeDeviationMap(edgeData.edgePoints, smartResult.circles, img.width, img.height);
+        const twStructure = detectTWStructure(grid, imageData);
 
         setGridData(grid);
         setSmartGridResult(smartResult);
         setDeviationMap(devMap);
+        setTWStructure(twStructure);
         setProcessing(false);
 
         let start: number | null = null;
@@ -82,7 +86,7 @@ export function Toolbar() {
       };
       img.src = url;
     },
-    [setImage, setOriginalImageData, setGridData, setSmartGridResult, setDeviationMap, setProcessing, setAnimationProgress]
+    [setImage, setOriginalImageData, setGridData, setSmartGridResult, setDeviationMap, setTWStructure, setProcessing, setAnimationProgress]
   );
 
   const handleExport = useCallback(
