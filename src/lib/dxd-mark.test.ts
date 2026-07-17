@@ -272,6 +272,16 @@ describe("DXD astroid geometry", () => {
 });
 
 describe("DXD SVG export", () => {
+  it("uses an open subpath for the animated pen trace", () => {
+    const svg = buildDxdSvg(masterSettings, options);
+    const traceElement = svg.match(/<path[^>]*class="dxd-mark-draw"[^>]*\/>/)?.[0];
+    const tracePath = traceElement?.match(/d="([^"]+)"/)?.[1];
+
+    expect(tracePath).toBeDefined();
+    expect(tracePath?.trim().endsWith("Z")).toBe(false);
+    expect(traceElement).not.toContain('vector-effect="non-scaling-stroke"');
+  });
+
   it("packages editable layers, settings metadata, and animation", () => {
     const svg = buildDxdSvg(settings, options);
 

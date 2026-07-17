@@ -331,6 +331,7 @@ export function getParameterAtArcProgress(
 export function createAstroidPath(
   settings: Pick<DxdMarkSettings, "sharpness" | "radius" | "rotation">,
   segments = 64,
+  closed = true,
 ) {
   const safeSegments = Math.max(16, Math.round(segments / 4) * 4);
   const angleStep = (Math.PI * 2) / safeSegments;
@@ -357,7 +358,7 @@ export function createAstroidPath(
     );
   }
 
-  commands.push("Z");
+  if (closed) commands.push("Z");
   return commands.join(" ");
 }
 
@@ -779,6 +780,7 @@ function renderStaticMark(path: string, settings: DxdMarkSettings) {
 
 function renderAnimatedMark(
   path: string,
+  tracePath: string,
   settings: DxdMarkSettings,
   animationMode: DxdAnimationMode,
 ) {
@@ -788,12 +790,12 @@ function renderAnimatedMark(
   }
 
   if (settings.treatment === "outline") {
-    return `<path id="dxd-mark" class="dxd-mark-draw" pathLength="1" d="${path}" fill="none" stroke="${settings.color}" stroke-width="${formatNumber(settings.strokeWidth)}" stroke-linejoin="round" vector-effect="non-scaling-stroke" />`;
+    return `<path id="dxd-mark" class="dxd-mark-draw" pathLength="1" d="${tracePath}" fill="none" stroke="${settings.color}" stroke-width="${formatNumber(settings.strokeWidth)}" stroke-linecap="round" stroke-linejoin="round" />`;
   }
 
   return `<g id="dxd-mark">
     <path class="dxd-mark-fill" d="${path}" fill="${settings.color}" />
-    <path class="dxd-mark-draw" pathLength="1" d="${path}" fill="none" stroke="${settings.color}" stroke-width="${formatNumber(Math.max(4, settings.strokeWidth))}" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+    <path class="dxd-mark-draw" pathLength="1" d="${tracePath}" fill="none" stroke="${settings.color}" stroke-width="${formatNumber(Math.max(4, settings.strokeWidth))}" stroke-linecap="round" stroke-linejoin="round" />
   </g>`;
 }
 
@@ -917,6 +919,7 @@ export function buildDxdSvg(settings: DxdMarkSettings, options: DxdExportOptions
   } satisfies DxdMarkSettings;
   const duration = Math.min(12, Math.max(0.4, options.duration));
   const path = createAstroidPath(normalizedSettings);
+  const tracePath = createAstroidPath(normalizedSettings, 64, false);
   const brandMaster = isDxdMaster(normalizedSettings);
   const brandProfile = Math.abs(normalizedSettings.sharpness - DXD_MASTER_SHARPNESS) < DXD_LAW_TOLERANCE;
   const mechanicalProfile = Math.abs(normalizedSettings.sharpness - DXD_CLASSICAL_SHARPNESS) < DXD_LAW_TOLERANCE;
@@ -976,11 +979,11 @@ export function buildDxdSvg(settings: DxdMarkSettings, options: DxdExportOptions
   const compass = includeCompass ? renderCompass(normalizedSettings) : "";
   const controlPoints = options.includeControlPoints ? renderControlPoints(normalizedSettings) : "";
   const mark = options.includeAnimation
-    ? renderAnimatedMark(path, normalizedSettings, options.animationMode)
+    ? renderAnimatedMark(path, tracePath, normalizedSettings, options.animationMode)
     : renderStaticMark(path, normalizedSettings);
   const math = options.includeMath ? renderMath(normalizedSettings) : "";
   const curvatureCompass = includeCurvatureCompass
-    ? renderCurvatureCompass(path, normalizedSettings, duration, options.includeAnimation)
+    ? renderCurvatureCompass(tracePath, normalizedSettings, duration, options.includeAnimation)
     : "";
 
   return `<?xml version="1.0" encoding="UTF-8"?>

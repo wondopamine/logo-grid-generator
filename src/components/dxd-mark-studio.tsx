@@ -574,6 +574,10 @@ export function DxdMarkStudio() {
     () => createAstroidPath(settings),
     [settings],
   );
+  const tracePath = useMemo(
+    () => createAstroidPath(settings, 64, false),
+    [settings],
+  );
   const construction = useMemo(
     () => getConstructionGeometry(settings.radius, settings.rotation),
     [settings.radius, settings.rotation],
@@ -858,15 +862,15 @@ export function DxdMarkStudio() {
                       <path d={path} fill={settings.color} opacity={fillProgress} />
                     ) : null}
                     <path
-                      d={path}
+                      d={tracePath}
                       pathLength="1"
                       fill="none"
                       stroke={settings.color}
                       strokeWidth={settings.treatment === "outline" ? settings.strokeWidth : Math.max(4, settings.strokeWidth / 2)}
+                      strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeDasharray="1"
                       strokeDashoffset={1 - markProgress}
-                      vectorEffect="non-scaling-stroke"
                     />
                   </g>
                 )}
