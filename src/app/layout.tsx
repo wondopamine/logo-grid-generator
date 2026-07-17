@@ -15,8 +15,9 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Logo Grid Generator",
-  description: "Generate professional geometric grid overlays for your logo. Golden ratio circles, Fibonacci grids, and construction lines.",
+  title: "DXD Mark Lab",
+  description:
+    "Build, animate, and export the DXD division mark as a production-ready SVG with its exact geometric construction.",
 };
 
 export default function RootLayout({
